@@ -135,8 +135,8 @@ This is the **primary mode** for developers verifying their work. When the user 
 
 1. **Analyze the branch diff** to understand what changed:
    \`\`\`bash
-   git diff main...HEAD --name-only
-   git log main..HEAD --oneline
+   git diff develop...HEAD --name-only
+   git log develop..HEAD --oneline
    \`\`\`
 
 2. **Identify affected pages/routes** from the changed files:
@@ -460,6 +460,7 @@ function findTemplates(): string[] {
     path.join(ROOT, 'plan-ceo-review', 'SKILL.md.tmpl'),
     path.join(ROOT, 'plan-eng-review', 'SKILL.md.tmpl'),
     path.join(ROOT, 'retro', 'SKILL.md.tmpl'),
+    path.join(ROOT, 'salt-review', 'SKILL.md.tmpl'),
     path.join(ROOT, 'gstack-upgrade', 'SKILL.md.tmpl'),
   ];
   for (const p of candidates) {

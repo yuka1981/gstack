@@ -2,7 +2,7 @@
 
 ## Instructions
 
-Review the `git diff origin/main` output for the issues listed below. Be specific — cite `file:line` and suggest fixes. Skip anything that's fine. Only flag real problems.
+Review the `git diff origin/develop` output for the issues listed below. Be specific — cite `file:line` and suggest fixes. Skip anything that's fine. Only flag real problems.
 
 **Two-pass review:**
 - **Pass 1 (CRITICAL):** Run SQL & Data Safety and LLM Output Trust Boundary first. These can block `/ship`.
@@ -47,6 +47,18 @@ Be terse. For each issue: one line describing the problem, one line with the fix
 #### LLM Output Trust Boundary
 - LLM-generated values (emails, URLs, names) written to DB or passed to mailers without format validation. Add lightweight guards (`EMAIL_REGEXP`, `URI.parse`, `.strip`) before persisting.
 - Structured tool output (arrays, hashes) accepted without type/shape checks before database writes.
+
+#### Salt State Safety
+- Salt state that is NOT idempotent — re-run would overwrite manual config or create duplicate resources. Every state must use `unless/onlyif/creates` guards or be inherently idempotent.
+- `cmd.run` without `creates` or `unless` — dangerous, runs every highstate.
+- Pillar data containing secrets not sourced from Vault — hardcoded passwords or tokens in pillar files.
+- Salt state targeting by minion ID instead of Grain/Pillar — brittle, breaks on hostname changes.
+
+#### Infrastructure Security
+- API endpoint missing Keycloak JWT validation before performing infrastructure mutations (server power, network changes, identity ops).
+- Vault secret access without proper policy scoping — over-broad access patterns.
+- SSH key or certificate operations without audit logging.
+- LDAP (389ds) write operations without proper ACL verification.
 
 ### Pass 2 — INFORMATIONAL
 
@@ -93,6 +105,23 @@ Be terse. For each issue: one line describing the problem, one line with the fix
 - O(n*m) lookups in views (`Array#find` in a loop instead of `index_by` hash)
 - Ruby-side `.select{}` filtering on DB results that could be a `WHERE` clause (unless intentionally avoiding leading-wildcard `LIKE`)
 
+#### Salt & Config Management
+- Salt Pillar values that should be in Vault but aren't (passwords, tokens, certs)
+- State files missing `watch` or `onchanges` for service restart after config change
+- Prometheus alert rules without corresponding runbook documentation
+- OpenSearch index mapping changes without migration plan
+
+#### Infrastructure Observability
+- New API endpoint without Prometheus request counter/histogram
+- New background job without duration metric and error counter
+- Salt state apply without structured log output to OpenSearch
+- Missing dashboard panel for new feature's health signals
+
+#### Deployment Safety
+- Database migration that isn't reversible
+- Salt state change without incremental rollout plan (test on one minion first)
+- Feature that requires coordinated deploy across Rails + Salt (document the order)
+
 ---
 
 ## Gate Classification
@@ -101,13 +130,16 @@ Be terse. For each issue: one line describing the problem, one line with the fix
 CRITICAL (blocks /ship):          INFORMATIONAL (in PR body):
 ├─ SQL & Data Safety              ├─ Conditional Side Effects
 ├─ Race Conditions & Concurrency  ├─ Magic Numbers & String Coupling
-└─ LLM Output Trust Boundary      ├─ Dead Code & Consistency
-                                   ├─ LLM Prompt Issues
-                                   ├─ Test Gaps
+├─ LLM Output Trust Boundary      ├─ Dead Code & Consistency
+├─ Salt State Safety               ├─ LLM Prompt Issues
+└─ Infrastructure Security         ├─ Test Gaps
                                    ├─ Crypto & Entropy
                                    ├─ Time Window Safety
                                    ├─ Type Coercion at Boundaries
-                                   └─ View/Frontend
+                                   ├─ View/Frontend
+                                   ├─ Salt & Config Management
+                                   ├─ Infrastructure Observability
+                                   └─ Deployment Safety
 ```
 
 ---
@@ -123,3 +155,7 @@ CRITICAL (blocks /ship):          INFORMATIONAL (in PR body):
 - Eval threshold changes (max_actionable, min scores) — these are tuned empirically and change constantly
 - Harmless no-ops (e.g., `.reject` on an element that's never in the array)
 - ANYTHING already addressed in the diff you're reviewing — read the FULL diff before commenting
+- Salt state `test=True` runs during development — these are intentional dry runs
+- Prometheus metric name changes during feature development — names stabilize at review
+- OpenSearch index name containing date patterns — this is by design for log rotation
+- Vault policy path changes during initial feature setup — paths stabilize before merge

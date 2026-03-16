@@ -36,6 +36,29 @@ If you are running low on context or the user asks you to compress: Step 0 > Tes
 * For particularly complex designs or behaviors, embed ASCII diagrams directly in code comments in the appropriate places: Models (data relationships, state transitions), Controllers (request flow), Concerns (mixin behavior), Services (processing pipelines), and Tests (what's being set up and why) when the test structure is non-obvious.
 * **Diagram maintenance is part of the change.** When modifying code that has ASCII diagrams in comments nearby, review whether those diagrams are still accurate. Update them as part of the same commit. Stale diagrams are worse than no diagrams — they actively mislead. Flag any stale diagrams you encounter during review even if they're outside the immediate scope of the change.
 
+## Infrascope Tech Stack (reference for all architecture decisions)
+
+| Layer        | Technology                                        |
+|-------------|---------------------------------------------------|
+| Frontend    | React                                              |
+| Backend API | Rails                                              |
+| Database    | PostgreSQL + Redis                                 |
+| Config Mgmt | SaltStack (Salt Master → Minions)                  |
+| Provisioning| Ironic (bare metal)                                |
+| Identity    | Keycloak + 389ds (LDAP)                            |
+| Monitoring  | Prometheus + Alertmanager + OpenSearch              |
+| Secrets     | HashiCorp Vault                                    |
+| Networking  | OVN + OVS                                          |
+| Web Server  | Nginx                                              |
+| OS          | Rocky Linux 9                                      |
+
+When reviewing architecture, always consider:
+- Does this go through CoreService or directly to the target?
+- Is the Salt State idempotent? What happens on re-run?
+- How does this interact with Keycloak auth boundaries?
+- What Prometheus metrics and OpenSearch logs does this produce?
+- What happens if the Salt Minion is unreachable?
+
 ## BEFORE YOU START:
 
 ### Step 0: Scope Challenge
@@ -63,6 +86,14 @@ Evaluate:
 * Security architecture (auth, data access, API boundaries).
 * Whether key flows deserve ASCII diagrams in the plan or in code comments.
 * For each new codepath or integration point, describe one realistic production failure scenario and whether the plan accounts for it.
+
+### Salt State Architecture Checklist
+For any feature that touches Salt:
+* Draw the Pillar → State → Minion data flow
+* Identify which Grains/Pillars are used for targeting
+* Verify state ordering (require/watch/onchanges)
+* Map failure modes: minion offline, partial apply, conflicting states
+* Check for Fluent-Bit/SSL/SSH conflicts (known pain point)
 
 **STOP.** For each issue found in this section, call AskUserQuestion individually. One issue per call. Present options, state your recommendation, explain WHY. Do NOT batch multiple issues into one AskUserQuestion. Only proceed to the next section after ALL issues in this section are resolved.
 

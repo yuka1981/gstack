@@ -58,7 +58,7 @@ Usage: /retro [window]
 
 First, fetch origin and identify the current user:
 ```bash
-git fetch origin main --quiet
+git fetch origin develop --quiet
 # Identify who is running the retro
 git config user.name
 git config user.email
@@ -70,28 +70,28 @@ Run ALL of these git commands in parallel (they are independent):
 
 ```bash
 # 1. All commits in window with timestamps, subject, hash, AUTHOR, files changed, insertions, deletions
-git log origin/main --since="<window>" --format="%H|%aN|%ae|%ai|%s" --shortstat
+git log origin/develop --since="<window>" --format="%H|%aN|%ae|%ai|%s" --shortstat
 
 # 2. Per-commit test vs total LOC breakdown with author
 #    Each commit block starts with COMMIT:<hash>|<author>, followed by numstat lines.
 #    Separate test files (matching test/|spec/|__tests__/) from production files.
-git log origin/main --since="<window>" --format="COMMIT:%H|%aN" --numstat
+git log origin/develop --since="<window>" --format="COMMIT:%H|%aN" --numstat
 
 # 3. Commit timestamps for session detection and hourly distribution (with author)
 #    Use TZ=America/Los_Angeles for Pacific time conversion
-TZ=America/Los_Angeles git log origin/main --since="<window>" --format="%at|%aN|%ai|%s" | sort -n
+TZ=America/Los_Angeles git log origin/develop --since="<window>" --format="%at|%aN|%ai|%s" | sort -n
 
 # 4. Files most frequently changed (hotspot analysis)
-git log origin/main --since="<window>" --format="" --name-only | grep -v '^$' | sort | uniq -c | sort -rn
+git log origin/develop --since="<window>" --format="" --name-only | grep -v '^$' | sort | uniq -c | sort -rn
 
 # 5. PR numbers from commit messages (extract #NNN patterns)
-git log origin/main --since="<window>" --format="%s" | grep -oE '#[0-9]+' | sed 's/^#//' | sort -n | uniq | sed 's/^/#/'
+git log origin/develop --since="<window>" --format="%s" | grep -oE '#[0-9]+' | sed 's/^#//' | sort -n | uniq | sed 's/^/#/'
 
 # 6. Per-author file hotspots (who touches what)
-git log origin/main --since="<window>" --format="AUTHOR:%aN" --name-only
+git log origin/develop --since="<window>" --format="AUTHOR:%aN" --name-only
 
 # 7. Per-author commit counts (quick summary)
-git shortlog origin/main --since="<window>" -sn --no-merges
+git shortlog origin/develop --since="<window>" -sn --no-merges
 
 # 8. Greptile triage history (if available)
 cat ~/.gstack/greptile-history.md 2>/dev/null || true
@@ -217,6 +217,22 @@ From commit diffs, estimate PR sizes and bucket them:
 - LOC changed
 - Why it matters (infer from commit messages and files touched)
 
+## Team Roles (Infrascope)
+Identify contributors by their functional role based on commit patterns:
+- **PM** — commits to docs/, specs/, or PRD files
+- **Designer** — commits to design/, figma exports, or UI mockups
+- **Frontend** — commits to app/javascript/, React components
+- **Backend** — commits to app/controllers/, app/models/, app/services/
+- **SQA** — commits to spec/, test/, or QA reports
+- **SRE** — commits to salt/, prometheus/, alertmanager/, monitoring/
+- **Sysadmin** — commits to infrastructure/, provisioning/, network/
+
+Give role-aware feedback:
+- For SRE: focus on incident response time, alert quality, Salt state reliability
+- For Backend: focus on API design, database performance, test coverage
+- For Frontend: focus on component reuse, accessibility, bundle size
+- For SQA: focus on test coverage trends, regression catch rate
+
 ### Step 9: Team Member Analysis
 
 For each contributor (including the current user), compute:
@@ -250,14 +266,14 @@ If the time window is 14 days or more, split into weekly buckets and show trends
 
 ### Step 11: Streak Tracking
 
-Count consecutive days with at least 1 commit to origin/main, going back from today. Track both team streak and personal streak:
+Count consecutive days with at least 1 commit to origin/develop, going back from today. Track both team streak and personal streak:
 
 ```bash
 # Team streak: all unique commit dates (Pacific time) — no hard cutoff
-TZ=America/Los_Angeles git log origin/main --format="%ad" --date=format:"%Y-%m-%d" | sort -u
+TZ=America/Los_Angeles git log origin/develop --format="%ad" --date=format:"%Y-%m-%d" | sort -u
 
 # Personal streak: only the current user's commits
-TZ=America/Los_Angeles git log origin/main --author="<user_name>" --format="%ad" --date=format:"%Y-%m-%d" | sort -u
+TZ=America/Los_Angeles git log origin/develop --author="<user_name>" --format="%ad" --date=format:"%Y-%m-%d" | sort -u
 ```
 
 Count backward from today — how many consecutive days have at least one commit? This queries the full history so streaks of any length are reported accurately. Display both:
@@ -475,7 +491,7 @@ When the user runs `/retro compare` (or `/retro compare 14d`):
 ## Important Rules
 
 - ALL narrative output goes directly to the user in the conversation. The ONLY file written is the `.context/retros/` JSON snapshot.
-- Use `origin/main` for all git queries (not local main which may be stale)
+- Use `origin/develop` for all git queries (not local develop which may be stale)
 - Convert all timestamps to Pacific time for display (use `TZ=America/Los_Angeles`)
 - If the window has zero commits, say so and suggest a different window
 - Round LOC/hour to nearest 50

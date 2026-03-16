@@ -34,8 +34,8 @@ You are running the `/review` workflow. Analyze the current branch's diff agains
 ## Step 1: Check branch
 
 1. Run `git branch --show-current` to get the current branch.
-2. If on `main`, output: **"Nothing to review — you're on main or have no changes against main."** and stop.
-3. Run `git fetch origin main --quiet && git diff origin/main --stat` to check if there's a diff. If no diff, output the same message and stop.
+2. If on `develop`, output: **"Nothing to review — you're on develop or have no changes against develop."** and stop.
+3. Run `git fetch origin develop --quiet && git diff origin/develop --stat` to check if there's a diff. If no diff, output the same message and stop.
 
 ---
 
@@ -62,10 +62,10 @@ Read `.claude/skills/review/greptile-triage.md` and follow the fetch, filter, cl
 Fetch the latest main to avoid false positives from a stale local main:
 
 ```bash
-git fetch origin main --quiet
+git fetch origin develop --quiet
 ```
 
-Run `git diff origin/main` to get the full diff. This includes both committed and uncommitted changes against the latest main.
+Run `git diff origin/develop` to get the full diff. This includes both committed and uncommitted changes against the latest develop.
 
 ---
 
