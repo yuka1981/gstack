@@ -251,6 +251,30 @@
 **Effort:** S
 **Priority:** P3
 
+### CI/CD generation for non-GitHub providers
+
+**What:** Extend CI/CD bootstrap to generate GitLab CI (`.gitlab-ci.yml`), CircleCI (`.circleci/config.yml`), and Bitrise pipelines.
+
+**Why:** Not all projects use GitHub Actions. Universal CI/CD bootstrap would make test bootstrap work for everyone.
+
+**Context:** v1 ships with GitHub Actions only. Detection logic already checks for `.gitlab-ci.yml`, `.circleci/`, `bitrise.yml` and skips with an informational note. Each provider needs ~20 lines of template text in `generateTestBootstrap()`.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** Test bootstrap (shipped)
+
+### Auto-upgrade weak tests (★) to strong tests (★★★)
+
+**What:** When Step 3.4 coverage audit identifies existing ★-rated tests (smoke/trivial assertions), generate improved versions testing edge cases and error paths.
+
+**Why:** Many codebases have tests that technically exist but don't catch real bugs — `expect(component).toBeDefined()` isn't testing behavior. Upgrading these closes the gap between "has tests" and "has good tests."
+
+**Context:** Requires the quality scoring rubric from the test coverage audit. Modifying existing test files is riskier than creating new ones — needs careful diffing to ensure the upgraded test still passes. Consider creating a companion test file rather than modifying the original.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** Test quality scoring (shipped)
+
 ## Retro
 
 ### Deployment health tracking (retro + browse)
@@ -350,6 +374,16 @@
 **Priority:** P2
 **Depends on:** None
 
+### Cross-platform URL open helper
+
+**What:** `gstack-open-url` helper script — detect platform, use `open` (macOS) or `xdg-open` (Linux).
+
+**Why:** The first-time Completeness Principle intro uses macOS `open` to launch the essay. If gstack ever supports Linux, this silently fails.
+
+**Effort:** S (human: ~30 min / CC: ~2 min)
+**Priority:** P4
+**Depends on:** Nothing
+
 ### CDP-based DOM mutation detection for ref staleness
 
 **What:** Use Chrome DevTools Protocol `DOM.documentUpdated` / MutationObserver events to proactively invalidate stale refs when the DOM changes, without requiring an explicit `snapshot` call.
@@ -361,6 +395,80 @@
 **Effort:** L
 **Priority:** P3
 **Depends on:** Ref staleness Parts 1+2 (shipped)
+
+## Design Review
+
+### /design-consultation interactive skill — SHIPPED
+
+~~**What:** Interactive skill that walks user through creating a DESIGN.md from scratch.~~
+
+Shipped as `/design-consultation` on garrytan/design branch. Renamed from `/setup-design-md` to reflect the consultant approach (agent proposes a complete coherent system, user adjusts). Includes competitive research via WebSearch, combined font+color preview page, coherence validation, and LLM-judged E2E tests.
+
+## Document-Release
+
+### Auto-invoke /document-release from /ship
+
+**What:** Add Step 8.5 to /ship that reads document-release/SKILL.md and executes the doc update workflow after creating the PR.
+
+**Why:** Zero-friction doc updates — user runs /ship and docs are automatically current. No extra command to remember.
+
+**Context:** /ship currently ends at Step 8 (PR URL output). Step 8.5 would continue into the document-release workflow. Same pattern as /ship calling /review's checklist in Step 3.5.
+
+**Effort:** S
+**Priority:** P1
+**Depends on:** /document-release shipped
+
+### `{{DOC_VOICE}}` shared resolver
+
+**What:** Create a placeholder resolver in gen-skill-docs.ts encoding the gstack voice guide (friendly, user-forward, lead with benefits). Inject into /ship Step 5, /document-release Step 5, and reference from CLAUDE.md.
+
+**Why:** DRY — voice rules currently live inline in 3 places (CLAUDE.md CHANGELOG style section, /ship Step 5, /document-release Step 5). When the voice evolves, all three drift.
+
+**Context:** Same pattern as `{{QA_METHODOLOGY}}` — shared block injected into multiple templates to prevent drift. ~20 lines in gen-skill-docs.ts.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
+## Ship Confidence Dashboard
+
+### Smart review relevance detection
+
+**What:** Auto-detect which of the 4 reviews are relevant based on branch changes (skip Design Review if no CSS/view changes, skip Code Review if plan-only).
+
+**Why:** Currently dashboard always shows 4 rows. On docs-only changes, "Design Review: NOT YET RUN" is noise.
+
+**Context:** /plan-design-review and /qa already do file-type detection in diff-aware mode. Could reuse that heuristic. Would require a `gstack-diff-scope` helper or enriching `gstack-slug` to also output change categories.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** Ship Confidence Dashboard (shipped)
+
+### /merge skill — review-gated PR merge
+
+**What:** Create a `/merge` skill that merges an approved PR, but first checks the Review Readiness Dashboard and runs `/review` (Fix-First) if code review hasn't been done. Separates "ship" (create PR) from "merge" (land it).
+
+**Why:** Currently `/review` runs inside `/ship` Step 3.5 but isn't tracked as a gate. A `/merge` skill ensures code review always happens before landing, and enables workflows where someone else reviews the PR first.
+
+**Context:** `/ship` creates the PR. `/merge` would: check dashboard → run `/review` if needed → `gh pr merge`. This is where code review tracking belongs — at merge time, not at plan time.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** Ship Confidence Dashboard (shipped)
+
+## Completeness
+
+### Completeness metrics dashboard
+
+**What:** Track how often Claude chooses the complete option vs shortcut across gstack sessions. Aggregate into a dashboard showing completeness trend over time.
+
+**Why:** Without measurement, we can't know if the Completeness Principle is working. Could surface patterns (e.g., certain skills still bias toward shortcuts).
+
+**Context:** Would require logging choices (e.g., append to a JSONL file when AskUserQuestion resolves), parsing them, and displaying trends. Similar pattern to eval persistence.
+
+**Effort:** M (human) / S (CC)
+**Priority:** P3
+**Depends on:** Boil the Lake shipped (v0.6.1)
 
 ## Completed
 
