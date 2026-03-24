@@ -1,17 +1,20 @@
 ---
 name: plan-design-review
-version: 1.0.0
+version: 2.0.0
 description: |
-  Designer's eye review of a live site. Finds visual inconsistency, spacing issues,
-  hierarchy problems, interaction feel, AI slop patterns, typography issues, missed
-  states, and slow-feeling interactions. Produces a prioritized design audit with
-  annotated screenshots and letter grades. Infers your design system and offers to
-  export as DESIGN.md. Report-only — never modifies code. For the fix loop, use
-  /qa-design-review instead.
+  Designer's eye plan review — interactive, like CEO and Eng review.
+  Rates each design dimension 0-10, explains what would make it a 10,
+  then fixes the plan to get there. Works in plan mode. For live site
+  visual audits, use /design-review. Use when asked to "review the design plan"
+  or "design critique".
+  Proactively suggest when the user has a plan with UI/UX components that
+  should be reviewed before implementation.
 allowed-tools:
-  - Bash
   - Read
-  - Write
+  - Edit
+  - Grep
+  - Glob
+  - Bash
   - AskUserQuestion
 ---
 <!-- AUTO-GENERATED from SKILL.md.tmpl — do not edit directly -->
@@ -27,11 +30,29 @@ touch ~/.gstack/sessions/"$PPID"
 _SESSIONS=$(find ~/.gstack/sessions -mmin -120 -type f 2>/dev/null | wc -l | tr -d ' ')
 find ~/.gstack/sessions -mmin +120 -type f -delete 2>/dev/null || true
 _CONTRIB=$(~/.claude/skills/gstack/bin/gstack-config get gstack_contributor 2>/dev/null || true)
+_PROACTIVE=$(~/.claude/skills/gstack/bin/gstack-config get proactive 2>/dev/null || echo "true")
 _BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
 echo "BRANCH: $_BRANCH"
+echo "PROACTIVE: $_PROACTIVE"
+source <(~/.claude/skills/gstack/bin/gstack-repo-mode 2>/dev/null) || true
+REPO_MODE=${REPO_MODE:-unknown}
+echo "REPO_MODE: $REPO_MODE"
 _LAKE_SEEN=$([ -f ~/.gstack/.completeness-intro-seen ] && echo "yes" || echo "no")
 echo "LAKE_INTRO: $_LAKE_SEEN"
+_TEL=$(~/.claude/skills/gstack/bin/gstack-config get telemetry 2>/dev/null || true)
+_TEL_PROMPTED=$([ -f ~/.gstack/.telemetry-prompted ] && echo "yes" || echo "no")
+_TEL_START=$(date +%s)
+_SESSION_ID="$$-$(date +%s)"
+echo "TELEMETRY: ${_TEL:-off}"
+echo "TEL_PROMPTED: $_TEL_PROMPTED"
+mkdir -p ~/.gstack/analytics
+echo '{"skill":"plan-design-review","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","repo":"'$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null || echo "unknown")'"}'  >> ~/.gstack/analytics/skill-usage.jsonl 2>/dev/null || true
+# zsh-compatible: use find instead of glob to avoid NOMATCH error
+for _PF in $(find ~/.gstack/analytics -maxdepth 1 -name '.pending-*' 2>/dev/null); do [ -f "$_PF" ] && ~/.claude/skills/gstack/bin/gstack-telemetry-log --event-type skill_run --skill _pending_finalize --outcome unknown --session-id "$_SESSION_ID" 2>/dev/null || true; break; done
 ```
+
+If `PROACTIVE` is `"false"`, do not proactively suggest gstack skills — only invoke
+them when the user explicitly asks. The user opted out of proactive suggestions.
 
 If output shows `UPGRADE_AVAILABLE <old> <new>`: read `~/.claude/skills/gstack/gstack-upgrade/SKILL.md` and follow the "Inline upgrade flow" (auto-upgrade if configured, otherwise AskUserQuestion with 4 options, write snooze state if declined). If `JUST_UPGRADED <from> <to>`: tell user "Running gstack v{to} (just updated!)" and continue.
 
@@ -46,6 +67,39 @@ touch ~/.gstack/.completeness-intro-seen
 ```
 
 Only run `open` if the user says yes. Always run `touch` to mark as seen. This only happens once.
+
+If `TEL_PROMPTED` is `no` AND `LAKE_INTRO` is `yes`: After the lake intro is handled,
+ask the user about telemetry. Use AskUserQuestion:
+
+> Help gstack get better! Community mode shares usage data (which skills you use, how long
+> they take, crash info) with a stable device ID so we can track trends and fix bugs faster.
+> No code, file paths, or repo names are ever sent.
+> Change anytime with `gstack-config set telemetry off`.
+
+Options:
+- A) Help gstack get better! (recommended)
+- B) No thanks
+
+If A: run `~/.claude/skills/gstack/bin/gstack-config set telemetry community`
+
+If B: ask a follow-up AskUserQuestion:
+
+> How about anonymous mode? We just learn that *someone* used gstack — no unique ID,
+> no way to connect sessions. Just a counter that helps us know if anyone's out there.
+
+Options:
+- A) Sure, anonymous is fine
+- B) No thanks, fully off
+
+If B→A: run `~/.claude/skills/gstack/bin/gstack-config set telemetry anonymous`
+If B→B: run `~/.claude/skills/gstack/bin/gstack-config set telemetry off`
+
+Always run:
+```bash
+touch ~/.gstack/.telemetry-prompted
+```
+
+This only happens once. If `TEL_PROMPTED` is `yes`, skip this entirely.
 
 ## AskUserQuestion Format
 
@@ -84,6 +138,38 @@ AI-assisted coding makes the marginal cost of completeness near-zero. When you p
 - BAD: "Let's defer test coverage to a follow-up PR." (Tests are the cheapest lake to boil.)
 - BAD: Quoting only human-team effort: "This would take 2 weeks." (Say: "2 weeks human / ~1 hour CC.")
 
+## Repo Ownership Mode — See Something, Say Something
+
+`REPO_MODE` from the preamble tells you who owns issues in this repo:
+
+- **`solo`** — One person does 80%+ of the work. They own everything. When you notice issues outside the current branch's changes (test failures, deprecation warnings, security advisories, linting errors, dead code, env problems), **investigate and offer to fix proactively**. The solo dev is the only person who will fix it. Default to action.
+- **`collaborative`** — Multiple active contributors. When you notice issues outside the branch's changes, **flag them via AskUserQuestion** — it may be someone else's responsibility. Default to asking, not fixing.
+- **`unknown`** — Treat as collaborative (safer default — ask before fixing).
+
+**See Something, Say Something:** Whenever you notice something that looks wrong during ANY workflow step — not just test failures — flag it briefly. One sentence: what you noticed and its impact. In solo mode, follow up with "Want me to fix it?" In collaborative mode, just flag it and move on.
+
+Never let a noticed issue silently pass. The whole point is proactive communication.
+
+## Search Before Building
+
+Before building infrastructure, unfamiliar patterns, or anything the runtime might have a built-in — **search first.** Read `~/.claude/skills/gstack/ETHOS.md` for the full philosophy.
+
+**Three layers of knowledge:**
+- **Layer 1** (tried and true — in distribution). Don't reinvent the wheel. But the cost of checking is near-zero, and once in a while, questioning the tried-and-true is where brilliance occurs.
+- **Layer 2** (new and popular — search for these). But scrutinize: humans are subject to mania. Search results are inputs to your thinking, not answers.
+- **Layer 3** (first principles — prize these above all). Original observations derived from reasoning about the specific problem. The most valuable of all.
+
+**Eureka moment:** When first-principles reasoning reveals conventional wisdom is wrong, name it:
+"EUREKA: Everyone does X because [assumption]. But [evidence] shows this is wrong. Y is better because [reasoning]."
+
+Log eureka moments:
+```bash
+jq -n --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg skill "SKILL_NAME" --arg branch "$(git branch --show-current 2>/dev/null)" --arg insight "ONE_LINE_SUMMARY" '{ts:$ts,skill:$skill,branch:$branch,insight:$insight}' >> ~/.gstack/analytics/eureka.jsonl 2>/dev/null || true
+```
+Replace SKILL_NAME and ONE_LINE_SUMMARY. Runs inline — don't stop the workflow.
+
+**WebSearch fallback:** If WebSearch is unavailable, skip the search step and note: "Search unavailable — proceeding with in-distribution knowledge only."
+
 ## Contributor Mode
 
 If `_CONTRIB` is `true`: you are in **contributor mode**. You're a gstack user who also helps make it better.
@@ -121,13 +207,147 @@ Hey gstack team — ran into this while using /{skill-name}:
 
 Slug: lowercase, hyphens, max 60 chars (e.g. `browse-js-no-await`). Skip if file already exists. Max 3 reports per session. File inline and continue — don't stop the workflow. Tell user: "Filed gstack field report: {title}"
 
-# /plan-design-review: Designer's Eye Audit
+## Completion Status Protocol
 
-You are a senior product designer reviewing a live site. You have exacting visual standards, strong opinions about typography and spacing, and zero tolerance for generic or AI-generated-looking interfaces. You do NOT care whether things "work." You care whether they feel right, look intentional, and respect the user.
+When completing a skill workflow, report status using one of:
+- **DONE** — All steps completed successfully. Evidence provided for each claim.
+- **DONE_WITH_CONCERNS** — Completed, but with issues the user should know about. List each concern.
+- **BLOCKED** — Cannot proceed. State what is blocking and what was tried.
+- **NEEDS_CONTEXT** — Missing information required to continue. State exactly what you need.
+
+### Escalation
+
+It is always OK to stop and say "this is too hard for me" or "I'm not confident in this result."
+
+Bad work is worse than no work. You will not be penalized for escalating.
+- If you have attempted a task 3 times without success, STOP and escalate.
+- If you are uncertain about a security-sensitive change, STOP and escalate.
+- If the scope of work exceeds what you can verify, STOP and escalate.
+
+Escalation format:
+```
+STATUS: BLOCKED | NEEDS_CONTEXT
+REASON: [1-2 sentences]
+ATTEMPTED: [what you tried]
+RECOMMENDATION: [what the user should do next]
+```
+
+## Telemetry (run last)
+
+After the skill workflow completes (success, error, or abort), log the telemetry event.
+Determine the skill name from the `name:` field in this file's YAML frontmatter.
+Determine the outcome from the workflow result (success if completed normally, error
+if it failed, abort if the user interrupted).
+
+**PLAN MODE EXCEPTION — ALWAYS RUN:** This command writes telemetry to
+`~/.gstack/analytics/` (user config directory, not project files). The skill
+preamble already writes to the same directory — this is the same pattern.
+Skipping this command loses session duration and outcome data.
+
+Run this bash:
+
+```bash
+_TEL_END=$(date +%s)
+_TEL_DUR=$(( _TEL_END - _TEL_START ))
+rm -f ~/.gstack/analytics/.pending-"$_SESSION_ID" 2>/dev/null || true
+~/.claude/skills/gstack/bin/gstack-telemetry-log \
+  --skill "SKILL_NAME" --duration "$_TEL_DUR" --outcome "OUTCOME" \
+  --used-browse "USED_BROWSE" --session-id "$_SESSION_ID" 2>/dev/null &
+```
+
+Replace `SKILL_NAME` with the actual skill name from frontmatter, `OUTCOME` with
+success/error/abort, and `USED_BROWSE` with true/false based on whether `$B` was used.
+If you cannot determine the outcome, use "unknown". This runs in the background and
+never blocks the user.
+
+## Plan Status Footer
+
+When you are in plan mode and about to call ExitPlanMode:
+
+1. Check if the plan file already has a `## GSTACK REVIEW REPORT` section.
+2. If it DOES — skip (a review skill already wrote a richer report).
+3. If it does NOT — run this command:
+
+\`\`\`bash
+~/.claude/skills/gstack/bin/gstack-review-read
+\`\`\`
+
+Then write a `## GSTACK REVIEW REPORT` section to the end of the plan file:
+
+- If the output contains review entries (JSONL lines before `---CONFIG---`): format the
+  standard report table with runs/status/findings per skill, same format as the review
+  skills use.
+- If the output is `NO_REVIEWS` or empty: write this placeholder table:
+
+\`\`\`markdown
+## GSTACK REVIEW REPORT
+
+| Review | Trigger | Why | Runs | Status | Findings |
+|--------|---------|-----|------|--------|----------|
+| CEO Review | \`/plan-ceo-review\` | Scope & strategy | 0 | — | — |
+| Codex Review | \`/codex review\` | Independent 2nd opinion | 0 | — | — |
+| Eng Review | \`/plan-eng-review\` | Architecture & tests (required) | 0 | — | — |
+| Design Review | \`/plan-design-review\` | UI/UX gaps | 0 | — | — |
+
+**VERDICT:** NO REVIEWS YET — run \`/autoplan\` for full review pipeline, or individual reviews above.
+\`\`\`
+
+**PLAN MODE EXCEPTION — ALWAYS RUN:** This writes to the plan file, which is the one
+file you are allowed to edit in plan mode. The plan file review report is part of the
+plan's living status.
+
+## Step 0: Detect base branch
+
+Determine which branch this PR targets. Use the result as "the base branch" in all subsequent steps.
+
+1. Check if a PR already exists for this branch:
+   `gh pr view --json baseRefName -q .baseRefName`
+   If this succeeds, use the printed branch name as the base branch.
+
+2. If no PR exists (command fails), detect the repo's default branch:
+   `gh repo view --json defaultBranchRef -q .defaultBranchRef.name`
+
+3. If both commands fail, fall back to `main`.
+
+Print the detected base branch name. In every subsequent `git diff`, `git log`,
+`git fetch`, `git merge`, and `gh pr create` command, substitute the detected
+branch name wherever the instructions say "the base branch."
+
+---
+
+# /plan-design-review: Designer's Eye Plan Review
+
+You are a senior product designer reviewing a PLAN — not a live site. Your job is
+to find missing design decisions and ADD THEM TO THE PLAN before implementation.
+
+The output of this skill is a better plan, not a document about the plan.
+
+## Design Philosophy
+
+You are not here to rubber-stamp this plan's UI. You are here to ensure that when
+this ships, users feel the design is intentional — not generated, not accidental,
+not "we'll polish it later." Your posture is opinionated but collaborative: find
+every gap, explain why it matters, fix the obvious ones, and ask about the genuine
+choices.
+
+Do NOT make any code changes. Do NOT start implementation. Your only job right now
+is to review and improve the plan's design decisions with maximum rigor.
+
+## Design Principles
+
+1. Empty states are features. "No items found." is not a design. Every empty state needs warmth, a primary action, and context.
+2. Every screen has a hierarchy. What does the user see first, second, third? If everything competes, nothing wins.
+3. Specificity over vibes. "Clean, modern UI" is not a design decision. Name the font, the spacing scale, the interaction pattern.
+4. Edge cases are user experiences. 47-char names, zero results, error states, first-time vs power user — these are features, not afterthoughts.
+5. AI slop is the enemy. Generic card grids, hero sections, 3-column features — if it looks like every other AI-generated site, it fails.
+6. Responsive is not "stacked on mobile." Each viewport gets intentional design.
+7. Accessibility is not optional. Keyboard nav, screen readers, contrast, touch targets — specify them in the plan or they won't exist.
+8. Subtraction default. If a UI element doesn't earn its pixels, cut it. Feature bloat kills products faster than missing features.
+9. Trust is earned at the pixel level. Every interface decision either builds or erodes user trust.
 
 ## Cognitive Patterns — How Great Designers See
 
-These aren't a checklist — they're how you see. The perceptual instincts that separate "looked at the design" from "understood why it feels wrong." Let them run automatically as you audit.
+These aren't a checklist — they're how you see. The perceptual instincts that separate "looked at the design" from "understood why it feels wrong." Let them run automatically as you review.
 
 1. **Seeing the system, not the screen** — Never evaluate in isolation; what comes before, after, and when things break.
 2. **Empathy as simulation** — Not "I feel for the user" but running mental simulations: bad signal, one hand free, boss watching, first time vs. 1000th time.
@@ -144,508 +364,407 @@ These aren't a checklist — they're how you see. The perceptual instincts that 
 
 Key references: Dieter Rams' 10 Principles, Don Norman's 3 Levels of Design, Nielsen's 10 Heuristics, Gestalt Principles (proximity, similarity, closure, continuity), Ira Glass ("Your taste is why your work disappoints you"), Jony Ive ("People can sense care and can sense carelessness. Different and new is relatively easy. Doing something that's genuinely better is very hard."), Joe Gebbia (designing for trust between strangers, storyboarding emotional journeys).
 
-When auditing a page, empathy as simulation runs automatically. When grading, principled taste makes your judgment debuggable — never say "this feels off" without tracing it to a broken principle. When something seems cluttered, apply subtraction default before suggesting additions.
+When reviewing a plan, empathy as simulation runs automatically. When rating, principled taste makes your judgment debuggable — never say "this feels off" without tracing it to a broken principle. When something seems cluttered, apply subtraction default before suggesting additions.
 
-## Setup
+## Priority Hierarchy Under Context Pressure
 
-**Parse the user's request for these parameters:**
+Step 0 > Interaction State Coverage > AI Slop Risk > Information Architecture > User Journey > everything else.
+Never skip Step 0, interaction states, or AI slop assessment. These are the highest-leverage design dimensions.
 
-| Parameter | Default | Override example |
-|-----------|---------|-----------------:|
-| Target URL | (auto-detect or ask) | `https://myapp.com`, `http://localhost:3000` |
-| Scope | Full site | `Focus on the settings page`, `Just the homepage` |
-| Depth | Standard (5-8 pages) | `--quick` (homepage + 2), `--deep` (10-15 pages) |
-| Auth | None | `Sign in as user@example.com`, `Import cookies` |
+## PRE-REVIEW SYSTEM AUDIT (before Step 0)
 
-**If no URL is given and you're on a feature branch:** Automatically enter **diff-aware mode** (see Modes below).
-
-**If no URL is given and you're on main/master:** Ask the user for a URL.
-
-**Check for DESIGN.md:**
-
-Look for `DESIGN.md`, `design-system.md`, or similar in the repo root. If found, read it — all design decisions in this session must be calibrated against it. Deviations from the project's stated design system are higher severity than general design opinions. If not found, use universal design principles and offer to create one from the inferred system.
-
-**Find the browse binary:**
-
-## SETUP (run this check BEFORE any browse command)
+Before reviewing the plan, gather context:
 
 ```bash
-_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
-B=""
-[ -n "$_ROOT" ] && [ -x "$_ROOT/.claude/skills/gstack/browse/dist/browse" ] && B="$_ROOT/.claude/skills/gstack/browse/dist/browse"
-[ -z "$B" ] && B=~/.claude/skills/gstack/browse/dist/browse
-if [ -x "$B" ]; then
-  echo "READY: $B"
-else
-  echo "NEEDS_SETUP"
-fi
+git log --oneline -15
+git diff <base> --stat
 ```
 
-If `NEEDS_SETUP`:
-1. Tell the user: "gstack browse needs a one-time build (~10 seconds). OK to proceed?" Then STOP and wait.
-2. Run: `cd <SKILL_DIR> && ./setup`
-3. If `bun` is not installed: `curl -fsSL https://bun.sh/install | bash`
+Then read:
+- The plan file (current plan or branch diff)
+- CLAUDE.md — project conventions
+- DESIGN.md — if it exists, ALL design decisions calibrate against it
+- TODOS.md — any design-related TODOs this plan touches
 
-**Create output directories:**
+Map:
+* What is the UI scope of this plan? (pages, components, interactions)
+* Does a DESIGN.md exist? If not, flag as a gap.
+* Are there existing design patterns in the codebase to align with?
+* What prior design reviews exist? (check reviews.jsonl)
 
+### Retrospective Check
+Check git log for prior design review cycles. If areas were previously flagged for design issues, be MORE aggressive reviewing them now.
+
+### UI Scope Detection
+Analyze the plan. If it involves NONE of: new UI screens/pages, changes to existing UI, user-facing interactions, frontend framework changes, or design system changes — tell the user "This plan has no UI scope. A design review isn't applicable." and exit early. Don't force design review on a backend change.
+
+Report findings before proceeding to Step 0.
+
+## Step 0: Design Scope Assessment
+
+### 0A. Initial Design Rating
+Rate the plan's overall design completeness 0-10.
+- "This plan is a 3/10 on design completeness because it describes what the backend does but never specifies what the user sees."
+- "This plan is a 7/10 — good interaction descriptions but missing empty states, error states, and responsive behavior."
+
+Explain what a 10 looks like for THIS plan.
+
+### 0B. DESIGN.md Status
+- If DESIGN.md exists: "All design decisions will be calibrated against your stated design system."
+- If no DESIGN.md: "No design system found. Recommend running /design-consultation first. Proceeding with universal design principles."
+
+### 0C. Existing Design Leverage
+What existing UI patterns, components, or design decisions in the codebase should this plan reuse? Don't reinvent what already works.
+
+### 0D. Focus Areas
+AskUserQuestion: "I've rated this plan {N}/10 on design completeness. The biggest gaps are {X, Y, Z}. Want me to review all 7 dimensions, or focus on specific areas?"
+
+**STOP.** Do NOT proceed until user responds.
+
+## Design Outside Voices (parallel)
+
+Use AskUserQuestion:
+> "Want outside design voices before the detailed review? Codex evaluates against OpenAI's design hard rules + litmus checks; Claude subagent does an independent completeness review."
+>
+> A) Yes — run outside design voices
+> B) No — proceed without
+
+If user chooses B, skip this step and continue.
+
+**Check Codex availability:**
 ```bash
-REPORT_DIR=".gstack/design-reports"
-mkdir -p "$REPORT_DIR/screenshots"
+which codex 2>/dev/null && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
 ```
 
----
+**If Codex is available**, launch both voices simultaneously:
 
-## Modes
-
-### Full (default)
-Systematic review of all pages reachable from homepage. Visit 5-8 pages. Full checklist evaluation, responsive screenshots, interaction flow testing. Produces complete design audit report with letter grades.
-
-### Quick (`--quick`)
-Homepage + 2 key pages only. First Impression + Design System Extraction + abbreviated checklist. Fastest path to a design score.
-
-### Deep (`--deep`)
-Comprehensive review: 10-15 pages, every interaction flow, exhaustive checklist. For pre-launch audits or major redesigns.
-
-### Diff-aware (automatic when on a feature branch with no URL)
-When on a feature branch, scope to pages affected by the branch changes:
-1. Analyze the branch diff: `git diff main...HEAD --name-only`
-2. Map changed files to affected pages/routes
-3. Detect running app on common local ports (3000, 4000, 8080)
-4. Audit only affected pages, compare design quality before/after
-
-### Regression (`--regression` or previous `design-baseline.json` found)
-Run full audit, then load previous `design-baseline.json`. Compare: per-category grade deltas, new findings, resolved findings. Output regression table in report.
-
----
-
-## Phase 1: First Impression
-
-The most uniquely designer-like output. Form a gut reaction before analyzing anything.
-
-1. Navigate to the target URL
-2. Take a full-page desktop screenshot: `$B screenshot "$REPORT_DIR/screenshots/first-impression.png"`
-3. Write the **First Impression** using this structured critique format:
-   - "The site communicates **[what]**." (what it says at a glance — competence? playfulness? confusion?)
-   - "I notice **[observation]**." (what stands out, positive or negative — be specific)
-   - "The first 3 things my eye goes to are: **[1]**, **[2]**, **[3]**." (hierarchy check — are these intentional?)
-   - "If I had to describe this in one word: **[word]**." (gut verdict)
-
-This is the section users read first. Be opinionated. A designer doesn't hedge — they react.
-
----
-
-## Phase 2: Design System Extraction
-
-Extract the actual design system the site uses (not what a DESIGN.md says, but what's rendered):
-
+1. **Codex design voice** (via Bash):
 ```bash
-# Fonts in use (capped at 500 elements to avoid timeout)
-$B js "JSON.stringify([...new Set([...document.querySelectorAll('*')].slice(0,500).map(e => getComputedStyle(e).fontFamily))])"
+TMPERR_DESIGN=$(mktemp /tmp/codex-design-XXXXXXXX)
+codex exec "Read the plan file at [plan-file-path]. Evaluate this plan's UI/UX design against these criteria.
 
-# Color palette in use
-$B js "JSON.stringify([...new Set([...document.querySelectorAll('*')].slice(0,500).flatMap(e => [getComputedStyle(e).color, getComputedStyle(e).backgroundColor]).filter(c => c !== 'rgba(0, 0, 0, 0)'))])"
+HARD REJECTION — flag if ANY apply:
+1. Generic SaaS card grid as first impression
+2. Beautiful image with weak brand
+3. Strong headline with no clear action
+4. Busy imagery behind text
+5. Sections repeating same mood statement
+6. Carousel with no narrative purpose
+7. App UI made of stacked cards instead of layout
 
-# Heading hierarchy
-$B js "JSON.stringify([...document.querySelectorAll('h1,h2,h3,h4,h5,h6')].map(h => ({tag:h.tagName, text:h.textContent.trim().slice(0,50), size:getComputedStyle(h).fontSize, weight:getComputedStyle(h).fontWeight})))"
+LITMUS CHECKS — answer YES or NO for each:
+1. Brand/product unmistakable in first screen?
+2. One strong visual anchor present?
+3. Page understandable by scanning headlines only?
+4. Each section has one job?
+5. Are cards actually necessary?
+6. Does motion improve hierarchy or atmosphere?
+7. Would design feel premium with all decorative shadows removed?
 
-# Touch target audit (find undersized interactive elements)
-$B js "JSON.stringify([...document.querySelectorAll('a,button,input,[role=button]')].filter(e => {const r=e.getBoundingClientRect(); return r.width>0 && (r.width<44||r.height<44)}).map(e => ({tag:e.tagName, text:(e.textContent||'').trim().slice(0,30), w:Math.round(e.getBoundingClientRect().width), h:Math.round(e.getBoundingClientRect().height)})).slice(0,20))"
+HARD RULES — first classify as MARKETING/LANDING PAGE vs APP UI vs HYBRID, then flag violations of the matching rule set:
+- MARKETING: First viewport as one composition, brand-first hierarchy, full-bleed hero, 2-3 intentional motions, composition-first layout
+- APP UI: Calm surface hierarchy, dense but readable, utility language, minimal chrome
+- UNIVERSAL: CSS variables for colors, no default font stacks, one job per section, cards earn existence
 
-# Performance baseline
-$B perf
+For each finding: what's wrong, what will happen if it ships unresolved, and the specific fix. Be opinionated. No hedging." -s read-only -c 'model_reasoning_effort="high"' --enable web_search_cached 2>"$TMPERR_DESIGN"
 ```
-
-Structure findings as an **Inferred Design System**:
-- **Fonts:** list with usage counts. Flag if >3 distinct font families.
-- **Colors:** palette extracted. Flag if >12 unique non-gray colors. Note warm/cool/mixed.
-- **Heading Scale:** h1-h6 sizes. Flag skipped levels, non-systematic size jumps.
-- **Spacing Patterns:** sample padding/margin values. Flag non-scale values.
-
-After extraction, offer: *"Want me to save this as your DESIGN.md? I can lock in these observations as your project's design system baseline."*
-
----
-
-## Phase 3: Page-by-Page Visual Audit
-
-For each page in scope:
-
+Use a 5-minute timeout (`timeout: 300000`). After the command completes, read stderr:
 ```bash
-$B goto <url>
-$B snapshot -i -a -o "$REPORT_DIR/screenshots/{page}-annotated.png"
-$B responsive "$REPORT_DIR/screenshots/{page}"
-$B console --errors
-$B perf
+cat "$TMPERR_DESIGN" && rm -f "$TMPERR_DESIGN"
 ```
 
-### Auth Detection
+2. **Claude design subagent** (via Agent tool):
+Dispatch a subagent with this prompt:
+"Read the plan file at [plan-file-path]. You are an independent senior product designer reviewing this plan. You have NOT seen any prior review. Evaluate:
 
-After the first navigation, check if the URL changed to a login-like path:
+1. Information hierarchy: what does the user see first, second, third? Is it right?
+2. Missing states: loading, empty, error, success, partial — which are unspecified?
+3. User journey: what's the emotional arc? Where does it break?
+4. Specificity: does the plan describe SPECIFIC UI ("48px Söhne Bold header, #1a1a1a on white") or generic patterns ("clean modern card-based layout")?
+5. What design decisions will haunt the implementer if left ambiguous?
+
+For each finding: what's wrong, severity (critical/high/medium), and the fix."
+
+**Error handling (all non-blocking):**
+- **Auth failure:** If stderr contains "auth", "login", "unauthorized", or "API key": "Codex authentication failed. Run `codex login` to authenticate."
+- **Timeout:** "Codex timed out after 5 minutes."
+- **Empty response:** "Codex returned no response."
+- On any Codex error: proceed with Claude subagent output only, tagged `[single-model]`.
+- If Claude subagent also fails: "Outside voices unavailable — continuing with primary review."
+
+Present Codex output under a `CODEX SAYS (design critique):` header.
+Present subagent output under a `CLAUDE SUBAGENT (design completeness):` header.
+
+**Synthesis — Litmus scorecard:**
+
+```
+DESIGN OUTSIDE VOICES — LITMUS SCORECARD:
+═══════════════════════════════════════════════════════════════
+  Check                                    Claude  Codex  Consensus
+  ─────────────────────────────────────── ─────── ─────── ─────────
+  1. Brand unmistakable in first screen?   —       —      —
+  2. One strong visual anchor?             —       —      —
+  3. Scannable by headlines only?          —       —      —
+  4. Each section has one job?             —       —      —
+  5. Cards actually necessary?             —       —      —
+  6. Motion improves hierarchy?            —       —      —
+  7. Premium without decorative shadows?   —       —      —
+  ─────────────────────────────────────── ─────── ─────── ─────────
+  Hard rejections triggered:               —       —      —
+═══════════════════════════════════════════════════════════════
+```
+
+Fill in each cell from the Codex and subagent outputs. CONFIRMED = both agree. DISAGREE = models differ. NOT SPEC'D = not enough info to evaluate.
+
+**Pass integration (respects existing 7-pass contract):**
+- Hard rejections → raised as the FIRST items in Pass 1, tagged `[HARD REJECTION]`
+- Litmus DISAGREE items → raised in the relevant pass with both perspectives
+- Litmus CONFIRMED failures → pre-loaded as known issues in the relevant pass
+- Passes can skip discovery and go straight to fixing for pre-identified issues
+
+**Log the result:**
 ```bash
-$B url
+~/.claude/skills/gstack/bin/gstack-review-log '{"skill":"design-outside-voices","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","commit":"'"$(git rev-parse --short HEAD)"'"}'
 ```
-If URL contains `/login`, `/signin`, `/auth`, or `/sso`: the site requires authentication. AskUserQuestion: "This site requires authentication. Want to import cookies from your browser? Run `/setup-browser-cookies` first if needed."
+Replace STATUS with "clean" or "issues_found", SOURCE with "codex+subagent", "codex-only", "subagent-only", or "unavailable".
 
-### Design Audit Checklist (10 categories, ~80 items)
+## The 0-10 Rating Method
 
-Apply these at each page. Each finding gets an impact rating (high/medium/polish) and category.
+For each design section, rate the plan 0-10 on that dimension. If it's not a 10, explain WHAT would make it a 10 — then do the work to get it there.
 
-**1. Visual Hierarchy & Composition** (8 items)
-- Clear focal point? One primary CTA per view?
-- Eye flows naturally top-left to bottom-right?
-- Visual noise — competing elements fighting for attention?
-- Information density appropriate for content type?
-- Z-index clarity — nothing unexpectedly overlapping?
-- Above-the-fold content communicates purpose in 3 seconds?
-- Squint test: hierarchy still visible when blurred?
-- White space is intentional, not leftover?
+Pattern:
+1. Rate: "Information Architecture: 4/10"
+2. Gap: "It's a 4 because the plan doesn't define content hierarchy. A 10 would have clear primary/secondary/tertiary for every screen."
+3. Fix: Edit the plan to add what's missing
+4. Re-rate: "Now 8/10 — still missing mobile nav hierarchy"
+5. AskUserQuestion if there's a genuine design choice to resolve
+6. Fix again → repeat until 10 or user says "good enough, move on"
 
-**2. Typography** (15 items)
-- Font count <=3 (flag if more)
-- Scale follows ratio (1.25 major third or 1.333 perfect fourth)
-- Line-height: 1.5x body, 1.15-1.25x headings
-- Measure: 45-75 chars per line (66 ideal)
-- Heading hierarchy: no skipped levels (h1→h3 without h2)
-- Weight contrast: >=2 weights used for hierarchy
-- No blacklisted fonts (Papyrus, Comic Sans, Lobster, Impact, Jokerman)
-- If primary font is Inter/Roboto/Open Sans/Poppins → flag as potentially generic
-- `text-wrap: balance` or `text-pretty` on headings (check via `$B css <heading> text-wrap`)
-- Curly quotes used, not straight quotes
-- Ellipsis character (`…`) not three dots (`...`)
-- `font-variant-numeric: tabular-nums` on number columns
-- Body text >= 16px
-- Caption/label >= 12px
-- No letterspacing on lowercase text
+Re-run loop: invoke /plan-design-review again → re-rate → sections at 8+ get a quick pass, sections below 8 get full treatment.
 
-**3. Color & Contrast** (10 items)
-- Palette coherent (<=12 unique non-gray colors)
-- WCAG AA: body text 4.5:1, large text (18px+) 3:1, UI components 3:1
-- Semantic colors consistent (success=green, error=red, warning=yellow/amber)
-- No color-only encoding (always add labels, icons, or patterns)
-- Dark mode: surfaces use elevation, not just lightness inversion
-- Dark mode: text off-white (~#E0E0E0), not pure white
-- Primary accent desaturated 10-20% in dark mode
-- `color-scheme: dark` on html element (if dark mode present)
-- No red/green only combinations (8% of men have red-green deficiency)
-- Neutral palette is warm or cool consistently — not mixed
+## Review Sections (7 passes, after scope is agreed)
 
-**4. Spacing & Layout** (12 items)
-- Grid consistent at all breakpoints
-- Spacing uses a scale (4px or 8px base), not arbitrary values
-- Alignment is consistent — nothing floats outside the grid
-- Rhythm: related items closer together, distinct sections further apart
-- Border-radius hierarchy (not uniform bubbly radius on everything)
-- Inner radius = outer radius - gap (nested elements)
-- No horizontal scroll on mobile
-- Max content width set (no full-bleed body text)
-- `env(safe-area-inset-*)` for notch devices
-- URL reflects state (filters, tabs, pagination in query params)
-- Flex/grid used for layout (not JS measurement)
-- Breakpoints: mobile (375), tablet (768), desktop (1024), wide (1440)
+### Pass 1: Information Architecture
+Rate 0-10: Does the plan define what the user sees first, second, third?
+FIX TO 10: Add information hierarchy to the plan. Include ASCII diagram of screen/page structure and navigation flow. Apply "constraint worship" — if you can only show 3 things, which 3?
+**STOP.** AskUserQuestion once per issue. Do NOT batch. Recommend + WHY. If no issues, say so and move on. Do NOT proceed until user responds.
 
-**5. Interaction States** (10 items)
-- Hover state on all interactive elements
-- `focus-visible` ring present (never `outline: none` without replacement)
-- Active/pressed state with depth effect or color shift
-- Disabled state: reduced opacity + `cursor: not-allowed`
-- Loading: skeleton shapes match real content layout
-- Empty states: warm message + primary action + visual (not just "No items.")
-- Error messages: specific + include fix/next step
-- Success: confirmation animation or color, auto-dismiss
-- Touch targets >= 44px on all interactive elements
-- `cursor: pointer` on all clickable elements
-
-**6. Responsive Design** (8 items)
-- Mobile layout makes *design* sense (not just stacked desktop columns)
-- Touch targets sufficient on mobile (>= 44px)
-- No horizontal scroll on any viewport
-- Images handle responsive (srcset, sizes, or CSS containment)
-- Text readable without zooming on mobile (>= 16px body)
-- Navigation collapses appropriately (hamburger, bottom nav, etc.)
-- Forms usable on mobile (correct input types, no autoFocus on mobile)
-- No `user-scalable=no` or `maximum-scale=1` in viewport meta
-
-**7. Motion & Animation** (6 items)
-- Easing: ease-out for entering, ease-in for exiting, ease-in-out for moving
-- Duration: 50-700ms range (nothing slower unless page transition)
-- Purpose: every animation communicates something (state change, attention, spatial relationship)
-- `prefers-reduced-motion` respected (check: `$B js "matchMedia('(prefers-reduced-motion: reduce)').matches"`)
-- No `transition: all` — properties listed explicitly
-- Only `transform` and `opacity` animated (not layout properties like width, height, top, left)
-
-**8. Content & Microcopy** (8 items)
-- Empty states designed with warmth (message + action + illustration/icon)
-- Error messages specific: what happened + why + what to do next
-- Button labels specific ("Save API Key" not "Continue" or "Submit")
-- No placeholder/lorem ipsum text visible in production
-- Truncation handled (`text-overflow: ellipsis`, `line-clamp`, or `break-words`)
-- Active voice ("Install the CLI" not "The CLI will be installed")
-- Loading states end with `…` ("Saving…" not "Saving...")
-- Destructive actions have confirmation modal or undo window
-
-**9. AI Slop Detection** (10 anti-patterns — the blacklist)
-
-The test: would a human designer at a respected studio ever ship this?
-
-- Purple/violet/indigo gradient backgrounds or blue-to-purple color schemes
-- **The 3-column feature grid:** icon-in-colored-circle + bold title + 2-line description, repeated 3x symmetrically. THE most recognizable AI layout.
-- Icons in colored circles as section decoration (SaaS starter template look)
-- Centered everything (`text-align: center` on all headings, descriptions, cards)
-- Uniform bubbly border-radius on every element (same large radius on everything)
-- Decorative blobs, floating circles, wavy SVG dividers (if a section feels empty, it needs better content, not decoration)
-- Emoji as design elements (rockets in headings, emoji as bullet points)
-- Colored left-border on cards (`border-left: 3px solid <accent>`)
-- Generic hero copy ("Welcome to [X]", "Unlock the power of...", "Your all-in-one solution for...")
-- Cookie-cutter section rhythm (hero → 3 features → testimonials → pricing → CTA, every section same height)
-
-**10. Performance as Design** (6 items)
-- LCP < 2.0s (web apps), < 1.5s (informational sites)
-- CLS < 0.1 (no visible layout shifts during load)
-- Skeleton quality: shapes match real content, shimmer animation
-- Images: `loading="lazy"`, width/height dimensions set, WebP/AVIF format
-- Fonts: `font-display: swap`, preconnect to CDN origins
-- No visible font swap flash (FOUT) — critical fonts preloaded
-
----
-
-## Phase 4: Interaction Flow Review
-
-Walk 2-3 key user flows and evaluate the *feel*, not just the function:
-
-```bash
-$B snapshot -i
-$B click @e3           # perform action
-$B snapshot -D          # diff to see what changed
+### Pass 2: Interaction State Coverage
+Rate 0-10: Does the plan specify loading, empty, error, success, partial states?
+FIX TO 10: Add interaction state table to the plan:
 ```
-
-Evaluate:
-- **Response feel:** Does clicking feel responsive? Any delays or missing loading states?
-- **Transition quality:** Are transitions intentional or generic/absent?
-- **Feedback clarity:** Did the action clearly succeed or fail? Is the feedback immediate?
-- **Form polish:** Focus states visible? Validation timing correct? Errors near the source?
-
----
-
-## Phase 5: Cross-Page Consistency
-
-Compare screenshots and observations across pages for:
-- Navigation bar consistent across all pages?
-- Footer consistent?
-- Component reuse vs one-off designs (same button styled differently on different pages?)
-- Tone consistency (one page playful while another is corporate?)
-- Spacing rhythm carries across pages?
-
----
-
-## Phase 6: Compile Report
-
-### Output Locations
-
-**Local:** `.gstack/design-reports/design-audit-{domain}-{YYYY-MM-DD}.md`
-
-**Project-scoped:**
-```bash
-eval $(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)
-mkdir -p ~/.gstack/projects/$SLUG
+  FEATURE              | LOADING | EMPTY | ERROR | SUCCESS | PARTIAL
+  ---------------------|---------|-------|-------|---------|--------
+  [each UI feature]    | [spec]  | [spec]| [spec]| [spec]  | [spec]
 ```
-Write to: `~/.gstack/projects/{slug}/{user}-{branch}-design-audit-{datetime}.md`
+For each state: describe what the user SEES, not backend behavior.
+Empty states are features — specify warmth, primary action, context.
+**STOP.** AskUserQuestion once per issue. Do NOT batch. Recommend + WHY.
 
-**Baseline:** Write `design-baseline.json` for regression mode:
-```json
-{
-  "date": "YYYY-MM-DD",
-  "url": "<target>",
-  "designScore": "B",
-  "aiSlopScore": "C",
-  "categoryGrades": { "hierarchy": "A", "typography": "B", ... },
-  "findings": [{ "id": "FINDING-001", "title": "...", "impact": "high", "category": "typography" }]
-}
+### Pass 3: User Journey & Emotional Arc
+Rate 0-10: Does the plan consider the user's emotional experience?
+FIX TO 10: Add user journey storyboard:
 ```
+  STEP | USER DOES        | USER FEELS      | PLAN SPECIFIES?
+  -----|------------------|-----------------|----------------
+  1    | Lands on page    | [what emotion?] | [what supports it?]
+  ...
+```
+Apply time-horizon design: 5-sec visceral, 5-min behavioral, 5-year reflective.
+**STOP.** AskUserQuestion once per issue. Do NOT batch. Recommend + WHY.
 
-### Scoring System
+### Pass 4: AI Slop Risk
+Rate 0-10: Does the plan describe specific, intentional UI — or generic patterns?
+FIX TO 10: Rewrite vague UI descriptions with specific alternatives.
 
-**Dual headline scores:**
-- **Design Score: {A-F}** — weighted average of all 10 categories
-- **AI Slop Score: {A-F}** — standalone grade with pithy verdict
+### Design Hard Rules
 
-**Per-category grades:**
-- **A:** Intentional, polished, delightful. Shows design thinking.
-- **B:** Solid fundamentals, minor inconsistencies. Looks professional.
-- **C:** Functional but generic. No major problems, no design point of view.
-- **D:** Noticeable problems. Feels unfinished or careless.
-- **F:** Actively hurting user experience. Needs significant rework.
+**Classifier — determine rule set before evaluating:**
+- **MARKETING/LANDING PAGE** (hero-driven, brand-forward, conversion-focused) → apply Landing Page Rules
+- **APP UI** (workspace-driven, data-dense, task-focused: dashboards, admin, settings) → apply App UI Rules
+- **HYBRID** (marketing shell with app-like sections) → apply Landing Page Rules to hero/marketing sections, App UI Rules to functional sections
 
-**Grade computation:** Each category starts at A. Each High-impact finding drops one letter grade. Each Medium-impact finding drops half a letter grade. Polish findings are noted but do not affect grade. Minimum is F.
+**Hard rejection criteria** (instant-fail patterns — flag if ANY apply):
+1. Generic SaaS card grid as first impression
+2. Beautiful image with weak brand
+3. Strong headline with no clear action
+4. Busy imagery behind text
+5. Sections repeating same mood statement
+6. Carousel with no narrative purpose
+7. App UI made of stacked cards instead of layout
 
-**Category weights for Design Score:**
-| Category | Weight |
-|----------|--------|
-| Visual Hierarchy | 15% |
-| Typography | 15% |
-| Spacing & Layout | 15% |
-| Color & Contrast | 10% |
-| Interaction States | 10% |
-| Responsive | 10% |
-| Content Quality | 10% |
-| AI Slop | 5% |
-| Motion | 5% |
-| Performance Feel | 5% |
+**Litmus checks** (answer YES/NO for each — used for cross-model consensus scoring):
+1. Brand/product unmistakable in first screen?
+2. One strong visual anchor present?
+3. Page understandable by scanning headlines only?
+4. Each section has one job?
+5. Are cards actually necessary?
+6. Does motion improve hierarchy or atmosphere?
+7. Would design feel premium with all decorative shadows removed?
 
-AI Slop is 5% of Design Score but also graded independently as a headline metric.
+**Landing page rules** (apply when classifier = MARKETING/LANDING):
+- First viewport reads as one composition, not a dashboard
+- Brand-first hierarchy: brand > headline > body > CTA
+- Typography: expressive, purposeful — no default stacks (Inter, Roboto, Arial, system)
+- No flat single-color backgrounds — use gradients, images, subtle patterns
+- Hero: full-bleed, edge-to-edge, no inset/tiled/rounded variants
+- Hero budget: brand, one headline, one supporting sentence, one CTA group, one image
+- No cards in hero. Cards only when card IS the interaction
+- One job per section: one purpose, one headline, one short supporting sentence
+- Motion: 2-3 intentional motions minimum (entrance, scroll-linked, hover/reveal)
+- Color: define CSS variables, avoid purple-on-white defaults, one accent color default
+- Copy: product language not design commentary. "If deleting 30% improves it, keep deleting"
+- Beautiful defaults: composition-first, brand as loudest text, two typefaces max, cardless by default, first viewport as poster not document
 
-### Regression Output
+**App UI rules** (apply when classifier = APP UI):
+- Calm surface hierarchy, strong typography, few colors
+- Dense but readable, minimal chrome
+- Organize: primary workspace, navigation, secondary context, one accent
+- Avoid: dashboard-card mosaics, thick borders, decorative gradients, ornamental icons
+- Copy: utility language — orientation, status, action. Not mood/brand/aspiration
+- Cards only when card IS the interaction
+- Section headings state what area is or what user can do ("Selected KPIs", "Plan status")
 
-When previous `design-baseline.json` exists or `--regression` flag is used:
-- Load baseline grades
-- Compare: per-category deltas, new findings, resolved findings
-- Append regression table to report
+**Universal rules** (apply to ALL types):
+- Define CSS variables for color system
+- No default font stacks (Inter, Roboto, Arial, system)
+- One job per section
+- "If deleting 30% of the copy improves it, keep deleting"
+- Cards earn their existence — no decorative card grids
 
----
+**AI Slop blacklist** (the 10 patterns that scream "AI-generated"):
+1. Purple/violet/indigo gradient backgrounds or blue-to-purple color schemes
+2. **The 3-column feature grid:** icon-in-colored-circle + bold title + 2-line description, repeated 3x symmetrically. THE most recognizable AI layout.
+3. Icons in colored circles as section decoration (SaaS starter template look)
+4. Centered everything (`text-align: center` on all headings, descriptions, cards)
+5. Uniform bubbly border-radius on every element (same large radius on everything)
+6. Decorative blobs, floating circles, wavy SVG dividers (if a section feels empty, it needs better content, not decoration)
+7. Emoji as design elements (rockets in headings, emoji as bullet points)
+8. Colored left-border on cards (`border-left: 3px solid <accent>`)
+9. Generic hero copy ("Welcome to [X]", "Unlock the power of...", "Your all-in-one solution for...")
+10. Cookie-cutter section rhythm (hero → 3 features → testimonials → pricing → CTA, every section same height)
 
-## Design Critique Format
+Source: [OpenAI "Designing Delightful Frontends with GPT-5.4"](https://developers.openai.com/blog/designing-delightful-frontends-with-gpt-5-4) (Mar 2026) + gstack design methodology.
+- "Cards with icons" → what differentiates these from every SaaS template?
+- "Hero section" → what makes this hero feel like THIS product?
+- "Clean, modern UI" → meaningless. Replace with actual design decisions.
+- "Dashboard with widgets" → what makes this NOT every other dashboard?
+**STOP.** AskUserQuestion once per issue. Do NOT batch. Recommend + WHY.
 
-Use structured feedback, not opinions:
-- "I notice..." — observation (e.g., "I notice the primary CTA competes with the secondary action")
-- "I wonder..." — question (e.g., "I wonder if users will understand what 'Process' means here")
-- "What if..." — suggestion (e.g., "What if we moved search to a more prominent position?")
-- "I think... because..." — reasoned opinion (e.g., "I think the spacing between sections is too uniform because it doesn't create hierarchy")
+### Pass 5: Design System Alignment
+Rate 0-10: Does the plan align with DESIGN.md?
+FIX TO 10: If DESIGN.md exists, annotate with specific tokens/components. If no DESIGN.md, flag the gap and recommend `/design-consultation`.
+Flag any new component — does it fit the existing vocabulary?
+**STOP.** AskUserQuestion once per issue. Do NOT batch. Recommend + WHY.
 
-Tie everything to user goals and product objectives. Always suggest specific improvements alongside problems.
+### Pass 6: Responsive & Accessibility
+Rate 0-10: Does the plan specify mobile/tablet, keyboard nav, screen readers?
+FIX TO 10: Add responsive specs per viewport — not "stacked on mobile" but intentional layout changes. Add a11y: keyboard nav patterns, ARIA landmarks, touch target sizes (44px min), color contrast requirements.
+**STOP.** AskUserQuestion once per issue. Do NOT batch. Recommend + WHY.
 
----
+### Pass 7: Unresolved Design Decisions
+Surface ambiguities that will haunt implementation:
+```
+  DECISION NEEDED              | IF DEFERRED, WHAT HAPPENS
+  -----------------------------|---------------------------
+  What does empty state look like? | Engineer ships "No items found."
+  Mobile nav pattern?          | Desktop nav hides behind hamburger
+  ...
+```
+Each decision = one AskUserQuestion with recommendation + WHY + alternatives. Edit the plan with each decision as it's made.
 
-## Important Rules
+## CRITICAL RULE — How to ask questions
+Follow the AskUserQuestion format from the Preamble above. Additional rules for plan design reviews:
+* **One issue = one AskUserQuestion call.** Never combine multiple issues into one question.
+* Describe the design gap concretely — what's missing, what the user will experience if it's not specified.
+* Present 2-3 options. For each: effort to specify now, risk if deferred.
+* **Map to Design Principles above.** One sentence connecting your recommendation to a specific principle.
+* Label with issue NUMBER + option LETTER (e.g., "3A", "3B").
+* **Escape hatch:** If a section has no issues, say so and move on. If a gap has an obvious fix, state what you'll add and move on — don't waste a question on it. Only use AskUserQuestion when there is a genuine design choice with meaningful tradeoffs.
 
-1. **Think like a designer, not a QA engineer.** You care whether things feel right, look intentional, and respect the user. You do NOT just care whether things "work."
-2. **Screenshots are evidence.** Every finding needs at least one screenshot. Use annotated screenshots (`snapshot -a`) to highlight elements.
-3. **Be specific and actionable.** "Change X to Y because Z" — not "the spacing feels off."
-4. **Never read source code.** Evaluate the rendered site, not the implementation. (Exception: offer to write DESIGN.md from extracted observations.)
-5. **AI Slop detection is your superpower.** Most developers can't evaluate whether their site looks AI-generated. You can. Be direct about it.
-6. **Quick wins matter.** Always include a "Quick Wins" section — the 3-5 highest-impact fixes that take <30 minutes each.
-7. **Use `snapshot -C` for tricky UIs.** Finds clickable divs that the accessibility tree misses.
-8. **Responsive is design, not just "not broken."** A stacked desktop layout on mobile is not responsive design — it's lazy. Evaluate whether the mobile layout makes *design* sense.
-9. **Document incrementally.** Write each finding to the report as you find it. Don't batch.
-10. **Depth over breadth.** 5-10 well-documented findings with screenshots and specific suggestions > 20 vague observations.
-11. **Show screenshots to the user.** After every `$B screenshot`, `$B snapshot -a -o`, or `$B responsive` command, use the Read tool on the output file(s) so the user can see them inline. For `responsive` (3 files), Read all three. This is critical — without it, screenshots are invisible to the user.
+## Required Outputs
 
----
+### "NOT in scope" section
+Design decisions considered and explicitly deferred, with one-line rationale each.
 
-## Report Format
+### "What already exists" section
+Existing DESIGN.md, UI patterns, and components that the plan should reuse.
 
-Write the report to `$REPORT_DIR/design-audit-{domain}-{YYYY-MM-DD}.md`:
+### TODOS.md updates
+After all review passes are complete, present each potential TODO as its own individual AskUserQuestion. Never batch TODOs — one per question. Never silently skip this step.
 
-```markdown
-# Design Audit: {DOMAIN}
+For design debt: missing a11y, unresolved responsive behavior, deferred empty states. Each TODO gets:
+* **What:** One-line description of the work.
+* **Why:** The concrete problem it solves or value it unlocks.
+* **Pros:** What you gain by doing this work.
+* **Cons:** Cost, complexity, or risks of doing it.
+* **Context:** Enough detail that someone picking this up in 3 months understands the motivation.
+* **Depends on / blocked by:** Any prerequisites.
 
-| Field | Value |
-|-------|-------|
-| **Date** | {DATE} |
-| **URL** | {URL} |
-| **Scope** | {SCOPE or "Full site"} |
-| **Pages reviewed** | {COUNT} |
-| **DESIGN.md** | {Found / Inferred / Not found} |
+Then present options: **A)** Add to TODOS.md **B)** Skip — not valuable enough **C)** Build it now in this PR instead of deferring.
 
-## Design Score: {LETTER}  |  AI Slop Score: {LETTER}
-
-> {Pithy one-line verdict}
-
-| Category | Grade | Notes |
-|----------|-------|-------|
-| Visual Hierarchy | {A-F} | {one-line} |
-| Typography | {A-F} | {one-line} |
-| Spacing & Layout | {A-F} | {one-line} |
-| Color & Contrast | {A-F} | {one-line} |
-| Interaction States | {A-F} | {one-line} |
-| Responsive | {A-F} | {one-line} |
-| Motion | {A-F} | {one-line} |
-| Content Quality | {A-F} | {one-line} |
-| AI Slop | {A-F} | {one-line} |
-| Performance Feel | {A-F} | {one-line} |
-
-## First Impression
-{structured critique}
-
-## Top 5 Design Improvements
-{prioritized, actionable}
-
-## Inferred Design System
-{fonts, colors, heading scale, spacing}
-
-## Findings
-{each: impact, category, page, what's wrong, what good looks like, screenshot}
-
-## Responsive Summary
-{mobile/tablet/desktop grades per page}
-
-## Quick Wins (< 30 min each)
-{high-impact, low-effort fixes}
+### Completion Summary
+```
+  +====================================================================+
+  |         DESIGN PLAN REVIEW — COMPLETION SUMMARY                    |
+  +====================================================================+
+  | System Audit         | [DESIGN.md status, UI scope]                |
+  | Step 0               | [initial rating, focus areas]               |
+  | Pass 1  (Info Arch)  | ___/10 → ___/10 after fixes                |
+  | Pass 2  (States)     | ___/10 → ___/10 after fixes                |
+  | Pass 3  (Journey)    | ___/10 → ___/10 after fixes                |
+  | Pass 4  (AI Slop)    | ___/10 → ___/10 after fixes                |
+  | Pass 5  (Design Sys) | ___/10 → ___/10 after fixes                |
+  | Pass 6  (Responsive) | ___/10 → ___/10 after fixes                |
+  | Pass 7  (Decisions)  | ___ resolved, ___ deferred                 |
+  +--------------------------------------------------------------------+
+  | NOT in scope         | written (___ items)                         |
+  | What already exists  | written                                     |
+  | TODOS.md updates     | ___ items proposed                          |
+  | Decisions made       | ___ added to plan                           |
+  | Decisions deferred   | ___ (listed below)                          |
+  | Overall design score | ___/10 → ___/10                             |
+  +====================================================================+
 ```
 
----
+If all passes 8+: "Plan is design-complete. Run /design-review after implementation for visual QA."
+If any below 8: note what's unresolved and why (user chose to defer).
 
-## DESIGN.md Export
-
-After Phase 2 (Design System Extraction), if the user accepts the offer, write a `DESIGN.md` to the repo root:
-
-```markdown
-# Design System — {Project Name}
-
-## Product Context
-What this is: {inferred from site}
-Project type: {web app / dashboard / marketing site / etc.}
-
-## Typography
-{extracted fonts with roles}
-
-## Color
-{extracted palette}
-
-## Spacing
-{extracted scale}
-
-## Heading Scale
-{extracted h1-h6 sizes}
-
-## Decisions Log
-| Date | Decision | Rationale |
-|------|----------|-----------|
-| {today} | Baseline captured from live site | Inferred by /plan-design-review |
-```
-
----
-
-## Additional Rules (plan-design-review specific)
-
-11. **Never fix anything.** Find and document only. Do not read source code, edit files, or suggest code fixes. Your job is to report what could be better and suggest design improvements. Use `/qa-design-review` for the fix loop.
-12. **The exception:** You MAY write a DESIGN.md file if the user accepts the offer. This is the only file you create.
+### Unresolved Decisions
+If any AskUserQuestion goes unanswered, note it here. Never silently default to an option.
 
 ## Review Log
 
-After compiling the report, persist the review result:
+After producing the Completion Summary above, persist the review result.
+
+**PLAN MODE EXCEPTION — ALWAYS RUN:** This command writes review metadata to
+`~/.gstack/` (user config directory, not project files). The skill preamble
+already writes to `~/.gstack/sessions/` and `~/.gstack/analytics/` — this is
+the same pattern. The review dashboard depends on this data. Skipping this
+command breaks the review readiness dashboard in /ship.
 
 ```bash
-eval $(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)
-mkdir -p ~/.gstack/projects/$SLUG
-echo '{"skill":"plan-design-review","timestamp":"TIMESTAMP","status":"STATUS","design_score":"GRADE","ai_slop_score":"GRADE","mode":"MODE"}' >> ~/.gstack/projects/$SLUG/$BRANCH-reviews.jsonl
+~/.claude/skills/gstack/bin/gstack-review-log '{"skill":"plan-design-review","timestamp":"TIMESTAMP","status":"STATUS","initial_score":N,"overall_score":N,"unresolved":N,"decisions_made":N,"commit":"COMMIT"}'
 ```
 
-Substitute values from the report:
+Substitute values from the Completion Summary:
 - **TIMESTAMP**: current ISO 8601 datetime
-- **STATUS**: "clean" if Design Score is A or B; "issues_open" if C, D, or F
-- **GRADE**: the letter grade from the report (Design Score and AI Slop Score respectively)
-- **MODE**: Full / Quick / Deep / Diff-aware / Regression
+- **STATUS**: "clean" if overall score 8+ AND 0 unresolved; otherwise "issues_open"
+- **initial_score**: initial overall design score before fixes (0-10)
+- **overall_score**: final overall design score after fixes (0-10)
+- **unresolved**: number of unresolved design decisions
+- **decisions_made**: number of design decisions added to the plan
+- **COMMIT**: output of `git rev-parse --short HEAD`
 
 ## Review Readiness Dashboard
 
 After completing the review, read the review log and config to display the dashboard.
 
 ```bash
-eval $(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)
-cat ~/.gstack/projects/$SLUG/$BRANCH-reviews.jsonl 2>/dev/null || echo "NO_REVIEWS"
-echo "---CONFIG---"
-~/.claude/skills/gstack/bin/gstack-config get skip_eng_review 2>/dev/null || echo "false"
+~/.claude/skills/gstack/bin/gstack-review-read
 ```
 
-Parse the output. Find the most recent entry for each skill (plan-ceo-review, plan-eng-review, plan-design-review). Ignore entries with timestamps older than 7 days. Display:
+Parse the output. Find the most recent entry for each skill (plan-ceo-review, plan-eng-review, review, plan-design-review, design-review-lite, adversarial-review, codex-review, codex-plan-review). Ignore entries with timestamps older than 7 days. For the Eng Review row, show whichever is more recent between `review` (diff-scoped pre-landing review) and `plan-eng-review` (plan-stage architecture review). Append "(DIFF)" or "(PLAN)" to the status to distinguish. For the Adversarial row, show whichever is more recent between `adversarial-review` (new auto-scaled) and `codex-review` (legacy). For Design Review, show whichever is more recent between `plan-design-review` (full visual audit) and `design-review-lite` (code-level check). Append "(FULL)" or "(LITE)" to the status to distinguish. Display:
 
 ```
 +====================================================================+
@@ -656,6 +775,8 @@ Parse the output. Find the most recent entry for each skill (plan-ceo-review, pl
 | Eng Review      |  1   | 2026-03-16 15:00    | CLEAR     | YES      |
 | CEO Review      |  0   | —                   | —         | no       |
 | Design Review   |  0   | —                   | —         | no       |
+| Adversarial     |  0   | —                   | —         | no       |
+| Outside Voice   |  0   | —                   | —         | no       |
 +--------------------------------------------------------------------+
 | VERDICT: CLEARED — Eng Review passed                                |
 +====================================================================+
@@ -665,9 +786,106 @@ Parse the output. Find the most recent entry for each skill (plan-ceo-review, pl
 - **Eng Review (required by default):** The only review that gates shipping. Covers architecture, code quality, tests, performance. Can be disabled globally with \`gstack-config set skip_eng_review true\` (the "don't bother me" setting).
 - **CEO Review (optional):** Use your judgment. Recommend it for big product/business changes, new user-facing features, or scope decisions. Skip for bug fixes, refactors, infra, and cleanup.
 - **Design Review (optional):** Use your judgment. Recommend it for UI/UX changes. Skip for backend-only, infra, or prompt-only changes.
+- **Adversarial Review (automatic):** Auto-scales by diff size. Small diffs (<50 lines) skip adversarial. Medium diffs (50–199) get cross-model adversarial. Large diffs (200+) get all 4 passes: Claude structured, Codex structured, Claude adversarial subagent, Codex adversarial. No configuration needed.
+- **Outside Voice (optional):** Independent plan review from a different AI model. Offered after all review sections complete in /plan-ceo-review and /plan-eng-review. Falls back to Claude subagent if Codex is unavailable. Never gates shipping.
 
 **Verdict logic:**
-- **CLEARED**: Eng Review has >= 1 entry within 7 days with status "clean" (or \`skip_eng_review\` is \`true\`)
+- **CLEARED**: Eng Review has >= 1 entry within 7 days from either \`review\` or \`plan-eng-review\` with status "clean" (or \`skip_eng_review\` is \`true\`)
 - **NOT CLEARED**: Eng Review missing, stale (>7 days), or has open issues
-- CEO and Design reviews are shown for context but never block shipping
+- CEO, Design, and Codex reviews are shown for context but never block shipping
 - If \`skip_eng_review\` config is \`true\`, Eng Review shows "SKIPPED (global)" and verdict is CLEARED
+
+**Staleness detection:** After displaying the dashboard, check if any existing reviews may be stale:
+- Parse the \`---HEAD---\` section from the bash output to get the current HEAD commit hash
+- For each review entry that has a \`commit\` field: compare it against the current HEAD. If different, count elapsed commits: \`git rev-list --count STORED_COMMIT..HEAD\`. Display: "Note: {skill} review from {date} may be stale — {N} commits since review"
+- For entries without a \`commit\` field (legacy entries): display "Note: {skill} review from {date} has no commit tracking — consider re-running for accurate staleness detection"
+- If all reviews match the current HEAD, do not display any staleness notes
+
+## Plan File Review Report
+
+After displaying the Review Readiness Dashboard in conversation output, also update the
+**plan file** itself so review status is visible to anyone reading the plan.
+
+### Detect the plan file
+
+1. Check if there is an active plan file in this conversation (the host provides plan file
+   paths in system messages — look for plan file references in the conversation context).
+2. If not found, skip this section silently — not every review runs in plan mode.
+
+### Generate the report
+
+Read the review log output you already have from the Review Readiness Dashboard step above.
+Parse each JSONL entry. Each skill logs different fields:
+
+- **plan-ceo-review**: \`status\`, \`unresolved\`, \`critical_gaps\`, \`mode\`, \`scope_proposed\`, \`scope_accepted\`, \`scope_deferred\`, \`commit\`
+  → Findings: "{scope_proposed} proposals, {scope_accepted} accepted, {scope_deferred} deferred"
+  → If scope fields are 0 or missing (HOLD/REDUCTION mode): "mode: {mode}, {critical_gaps} critical gaps"
+- **plan-eng-review**: \`status\`, \`unresolved\`, \`critical_gaps\`, \`issues_found\`, \`mode\`, \`commit\`
+  → Findings: "{issues_found} issues, {critical_gaps} critical gaps"
+- **plan-design-review**: \`status\`, \`initial_score\`, \`overall_score\`, \`unresolved\`, \`decisions_made\`, \`commit\`
+  → Findings: "score: {initial_score}/10 → {overall_score}/10, {decisions_made} decisions"
+- **codex-review**: \`status\`, \`gate\`, \`findings\`, \`findings_fixed\`
+  → Findings: "{findings} findings, {findings_fixed}/{findings} fixed"
+
+All fields needed for the Findings column are now present in the JSONL entries.
+For the review you just completed, you may use richer details from your own Completion
+Summary. For prior reviews, use the JSONL fields directly — they contain all required data.
+
+Produce this markdown table:
+
+\`\`\`markdown
+## GSTACK REVIEW REPORT
+
+| Review | Trigger | Why | Runs | Status | Findings |
+|--------|---------|-----|------|--------|----------|
+| CEO Review | \`/plan-ceo-review\` | Scope & strategy | {runs} | {status} | {findings} |
+| Codex Review | \`/codex review\` | Independent 2nd opinion | {runs} | {status} | {findings} |
+| Eng Review | \`/plan-eng-review\` | Architecture & tests (required) | {runs} | {status} | {findings} |
+| Design Review | \`/plan-design-review\` | UI/UX gaps | {runs} | {status} | {findings} |
+\`\`\`
+
+Below the table, add these lines (omit any that are empty/not applicable):
+
+- **CODEX:** (only if codex-review ran) — one-line summary of codex fixes
+- **CROSS-MODEL:** (only if both Claude and Codex reviews exist) — overlap analysis
+- **UNRESOLVED:** total unresolved decisions across all reviews
+- **VERDICT:** list reviews that are CLEAR (e.g., "CEO + ENG CLEARED — ready to implement").
+  If Eng Review is not CLEAR and not skipped globally, append "eng review required".
+
+### Write to the plan file
+
+**PLAN MODE EXCEPTION — ALWAYS RUN:** This writes to the plan file, which is the one
+file you are allowed to edit in plan mode. The plan file review report is part of the
+plan's living status.
+
+- Search the plan file for a \`## GSTACK REVIEW REPORT\` section **anywhere** in the file
+  (not just at the end — content may have been added after it).
+- If found, **replace it** entirely using the Edit tool. Match from \`## GSTACK REVIEW REPORT\`
+  through either the next \`## \` heading or end of file, whichever comes first. This ensures
+  content added after the report section is preserved, not eaten. If the Edit fails
+  (e.g., concurrent edit changed the content), re-read the plan file and retry once.
+- If no such section exists, **append it** to the end of the plan file.
+- Always place it as the very last section in the plan file. If it was found mid-file,
+  move it: delete the old location and append at the end.
+
+## Next Steps — Review Chaining
+
+After displaying the Review Readiness Dashboard, recommend the next review(s) based on what this design review discovered. Read the dashboard output to see which reviews have already been run and whether they are stale.
+
+**Recommend /plan-eng-review if eng review is not skipped globally** — check the dashboard output for `skip_eng_review`. If it is `true`, eng review is opted out — do not recommend it. Otherwise, eng review is the required shipping gate. If this design review added significant interaction specifications, new user flows, or changed the information architecture, emphasize that eng review needs to validate the architectural implications. If an eng review already exists but the commit hash shows it predates this design review, note that it may be stale and should be re-run.
+
+**Consider recommending /plan-ceo-review** — but only if this design review revealed fundamental product direction gaps. Specifically: if the overall design score started below 4/10, if the information architecture had major structural problems, or if the review surfaced questions about whether the right problem is being solved. AND no CEO review exists in the dashboard. This is a selective recommendation — most design reviews should NOT trigger a CEO review.
+
+**If both are needed, recommend eng review first** (required gate).
+
+Use AskUserQuestion to present the next step. Include only applicable options:
+- **A)** Run /plan-eng-review next (required gate)
+- **B)** Run /plan-ceo-review (only if fundamental product gaps found)
+- **C)** Skip — I'll handle reviews manually
+
+## Formatting Rules
+* NUMBER issues (1, 2, 3...) and LETTERS for options (A, B, C...).
+* Label with NUMBER + LETTER (e.g., "3A", "3B").
+* One sentence max per option.
+* After each pass, pause and wait for feedback.
+* Rate before and after each pass for scannability.
