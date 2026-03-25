@@ -36,11 +36,13 @@ Automatic on review completion — at the final summary step, after all interact
 
 ### Failure Policy
 
-File write is **non-blocking**. If the write fails (permission error, path conflict, tool error):
+File write is **non-blocking**. If the primary write to `docs/reviews/` fails (permission error, path conflict, tool error, plan-mode restriction):
 1. The review itself completes normally — JSONL logging is unaffected
-2. Warn the user with the error and the intended file path
-3. Print the full report content to the terminal so nothing is lost
+2. Fallback write to `~/.gstack/projects/{project-slug}/reviews/{filename}.md` (guaranteed writable, outside repo)
+3. If fallback also fails, warn the user and print the full report content to the terminal
 4. The review is not considered failed due to a file write error
+
+**Plan-mode note**: The preamble restricts plan-mode writes to the plan file only. The report write happens after the review completes (post-completion step), which is outside the plan-mode scope. If plan-mode restrictions still block the write, the fallback path at `~/.gstack/` is always available.
 
 ### Template System
 
@@ -90,7 +92,7 @@ The markdown report reuses the existing JSONL status values with this mapping:
 | `clean` | `approved` | 0 unresolved decisions AND 0 critical gaps |
 | `issues_open` | `changes-requested` | Any unresolved decisions or critical gaps |
 
-Note: No `blocked` status. Reports are only written on review completion, so an interrupted review produces no report file (the JSONL log still captures the attempt).
+Note: No `blocked` status. Reports are only written on review completion, so an interrupted review produces no report file. The JSONL log also only writes on completion (it is appended in the same completion step), so an interrupted review produces neither artifact.
 
 ### Reviewer Field
 
