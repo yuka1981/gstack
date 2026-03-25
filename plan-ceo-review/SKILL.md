@@ -14,6 +14,7 @@ description: |
 benefits-from: [office-hours]
 allowed-tools:
   - Read
+  - Write
   - Grep
   - Glob
   - Bash
@@ -1382,6 +1383,89 @@ plan's living status.
 - If no such section exists, **append it** to the end of the plan file.
 - Always place it as the very last section in the plan file. If it was found mid-file,
   move it: delete the old location and append at the end.
+
+## Review Report Output
+
+After completing the Review Readiness Dashboard and Plan File Review Report above,
+write a structured markdown report file to persist the full review findings.
+
+### Determine the report file path
+
+1. **Feature slug**: Derive from the plan file being reviewed in this session
+   (e.g. \`2026-03-24-api-rate-limiting-design.md\` → \`api-rate-limiting\`).
+   If no plan file, sanitize the git branch name (strip \`feat/\`, \`fix/\`, etc. prefixes,
+   replace non-alphanumeric with hyphens). If branch is \`main\` or \`master\`, use \`unknown-feature\`.
+
+2. **Date**: Use today's date in YYYY-MM-DD format.
+
+3. **File path**: \`docs/reviews/{date}-plan-ceo-review-{feature-slug}.md\`
+
+4. **Duplicate check**: If that file already exists, append \`-2\`, \`-3\`, etc.
+
+5. **Create directory**: \`mkdir -p docs/reviews\` before writing.
+
+### Determine status
+
+Map from the review log status you just persisted:
+- \`clean\` → \`approved\`
+- \`issues_open\` → \`changes-requested\`
+
+### Determine reviewer
+
+- If running in Claude Code: \`claude\`
+- If running via Codex: \`codex\`
+- If an outside voice was used during the review, add \`outside_voice: true\` to frontmatter
+
+### Write the report
+
+Use the Write tool to create the file. If the write fails:
+1. Try fallback path: \`~/.gstack/projects/$SLUG/reviews/{filename}.md\` (create dir with \`mkdir -p\`)
+2. If fallback also fails, warn the user and print the full report to terminal
+3. The review is NOT considered failed — this is non-blocking
+
+**PLAN MODE NOTE:** This write happens after review completion (post-completion step).
+If plan-mode restrictions block \`docs/reviews/\`, the fallback at \`~/.gstack/\` is always available.
+
+The report file MUST use this structure. Populate each section from your review findings:
+
+```markdown
+---
+date: {YYYY-MM-DD}
+skill: plan-ceo-review
+branch: {branch}
+project: {project-slug}
+feature: {feature-slug}
+status: {approved|changes-requested}
+mode: {SCOPE_EXPANSION|SELECTIVE_EXPANSION|HOLD_SCOPE|SCOPE_REDUCTION}
+reviewer: {claude|codex}
+commit: {short-sha}
+---
+
+# CEO Review — {Feature Title} ({YYYY-MM-DD})
+
+## Executive Summary
+2-3 sentence verdict: what was reviewed, what mode was used, overall assessment.
+Pull from the Completion Summary produced above.
+
+## Scope Decisions
+| Proposal | Decision | Rationale |
+|----------|----------|-----------|
+Fill from Step 0D scope proposals. For HOLD_SCOPE/SCOPE_REDUCTION, write "No scope changes — mode was {mode}."
+
+## Vision & Strategy
+Summarize the 10-star vision, dream state delta, and product direction findings.
+For HOLD_SCOPE/SCOPE_REDUCTION, summarize the rigor/reduction rationale instead.
+
+## Risks & Concerns
+List premises challenged, assumptions questioned, blind spots identified.
+Include any CRITICAL GAPs from the failure modes analysis.
+
+## Recommendations
+Prioritized list of concrete next steps from the review.
+
+## Action Items
+- [ ] List each actionable item from the review
+```
 
 ## Next Steps — Review Chaining
 
