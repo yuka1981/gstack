@@ -22,7 +22,7 @@ Examples:
 - `docs/reviews/2026-03-24-plan-eng-review-api-rate-limiting.md`
 
 **Feature slug derivation** (in priority order):
-1. Plan file name if one exists (e.g. `2026-03-24-api-rate-limiting-design.md` → `api-rate-limiting`)
+1. The plan file being reviewed in this session (e.g. `2026-03-24-api-rate-limiting-design.md` → `api-rate-limiting`). If multiple plan files exist, use the one explicitly referenced during the review — do not guess.
 2. Git branch name sanitized via `gstack-slug` (e.g. `feat/user-auth-redesign` → `user-auth-redesign`)
 3. Fallback: `unknown-feature` (deterministic, no user prompt — the review should not block on a filename question)
 
@@ -65,9 +65,9 @@ Each skill's `.tmpl` file places `{{REVIEW_REPORT_OUTPUT}}` at its completion st
 date: {YYYY-MM-DD}
 skill: {skill-name}
 branch: {sanitized-branch-via-gstack-slug}
-project: {project-slug-via-gstack-slug}
+project: {project-slug}
 feature: {feature-slug}
-status: {approved|changes-requested|blocked}
+status: {approved|changes-requested}
 reviewer: {claude|codex|other}
 commit: {short-sha}
 ---
@@ -77,7 +77,7 @@ commit: {short-sha}
 {skill-specific sections here}
 
 ---
-*Review log: ~/.gstack/projects/{slug}/{branch}-reviews.jsonl*
+*Review log: ~/.gstack/projects/{project-slug}/{branch}-reviews.jsonl*
 *Reviewed at commit: {full-sha}*
 ```
 
@@ -89,7 +89,8 @@ The markdown report reuses the existing JSONL status values with this mapping:
 |---|---|---|
 | `clean` | `approved` | 0 unresolved decisions AND 0 critical gaps |
 | `issues_open` | `changes-requested` | Any unresolved decisions or critical gaps |
-| (new) | `blocked` | Review could not complete (operational failure/interruption) |
+
+Note: No `blocked` status. Reports are only written on review completion, so an interrupted review produces no report file (the JSONL log still captures the attempt).
 
 ### Reviewer Field
 
@@ -158,7 +159,8 @@ Additional frontmatter fields: `unresolved: {count}`, `critical_gaps: {count}`
 1. **`scripts/gen-skill-docs.ts`** — Add `{{REVIEW_REPORT_OUTPUT}}` placeholder resolution
 2. **`plan-ceo-review/SKILL.md.tmpl`** — Add `Write` to allowed-tools; add report output step with CEO-specific sections
 3. **`plan-eng-review/SKILL.md.tmpl`** — Add report output step with eng-specific sections
-4. Regenerate `plan-ceo-review/SKILL.md` and `plan-eng-review/SKILL.md`
+4. Regenerate all skill docs via `bun run build` (covers both Claude SKILL.md and Codex `.agents/skills/` outputs)
+5. **`test/gen-skill-docs.test.ts`** — Add tests for: `{{REVIEW_REPORT_OUTPUT}}` placeholder resolution, duplicate filename counter logic, status mapping correctness
 
 ## Non-Goals
 
