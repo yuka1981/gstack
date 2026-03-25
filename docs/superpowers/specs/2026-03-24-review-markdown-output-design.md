@@ -23,25 +23,40 @@ Examples:
 
 **Feature slug derivation** (in priority order):
 1. Plan file name if one exists (e.g. `2026-03-24-api-rate-limiting-design.md` → `api-rate-limiting`)
-2. Git branch name as fallback (e.g. `feat/user-auth-redesign` → `user-auth-redesign`)
-3. AskUserQuestion if neither is available: "What feature is this review for? (used for the report filename)"
+2. Git branch name sanitized via `gstack-slug` (e.g. `feat/user-auth-redesign` → `user-auth-redesign`)
+3. Fallback: `unknown-feature` (deterministic, no user prompt — the review should not block on a filename question)
+
+**Slug normalization**: All slug derivation (project, branch, feature) uses `gstack-slug` or equivalent sanitization to match existing review log path conventions.
 
 **Duplicate detection**: If a same-day review file already exists for the same skill and feature, append an incrementing counter: `-2`, `-3`, etc.
 
 ### Trigger
 
-Automatic on review completion — at the final summary step, after all interactive review is done. No user prompt needed.
+Automatic on review completion — at the final summary step, after all interactive review is done.
+
+### Failure Policy
+
+File write is **non-blocking**. If the write fails (permission error, path conflict, tool error):
+1. The review itself completes normally — JSONL logging is unaffected
+2. Warn the user with the error and the intended file path
+3. Print the full report content to the terminal so nothing is lost
+4. The review is not considered failed due to a file write error
 
 ### Template System
 
 A new `{{REVIEW_REPORT_OUTPUT}}` placeholder in `gen-skill-docs.ts` handles the common structure:
 
 - YAML frontmatter generation
-- File path construction (slug detection, duplicate handling, directory creation)
+- File path construction (slug detection via `gstack-slug`, duplicate handling, directory creation)
 - Header and footer
 - Instructions to write the file via the Write tool
 
 Each skill's `.tmpl` file places `{{REVIEW_REPORT_OUTPUT}}` at its completion step and defines skill-specific report sections inline.
+
+### Tool Permissions
+
+- **plan-eng-review**: Already has `Write` in allowed-tools. No change needed.
+- **plan-ceo-review**: Add `Write` to allowed-tools. (It already instructs writing CEO plan files at `~/.gstack/projects/` but was missing the formal permission.)
 
 ### Common Structure
 
@@ -49,11 +64,11 @@ Each skill's `.tmpl` file places `{{REVIEW_REPORT_OUTPUT}}` at its completion st
 ---
 date: {YYYY-MM-DD}
 skill: {skill-name}
-branch: {git-branch}
-project: {project-slug}
+branch: {sanitized-branch-via-gstack-slug}
+project: {project-slug-via-gstack-slug}
 feature: {feature-slug}
 status: {approved|changes-requested|blocked}
-reviewer: claude
+reviewer: {claude|codex|other}
 commit: {short-sha}
 ---
 
@@ -65,6 +80,23 @@ commit: {short-sha}
 *Review log: ~/.gstack/projects/{slug}/{branch}-reviews.jsonl*
 *Reviewed at commit: {full-sha}*
 ```
+
+### Status Mapping
+
+The markdown report reuses the existing JSONL status values with this mapping:
+
+| JSONL status | Markdown status | When |
+|---|---|---|
+| `clean` | `approved` | 0 unresolved decisions AND 0 critical gaps |
+| `issues_open` | `changes-requested` | Any unresolved decisions or critical gaps |
+| (new) | `blocked` | Review could not complete (operational failure/interruption) |
+
+### Reviewer Field
+
+The `reviewer` frontmatter field is set dynamically based on runtime context:
+- `claude` when running in Claude Code
+- `codex` when running via Codex integration
+- If an outside-voice was used during the review, add `outside_voice: true` to frontmatter
 
 ### CEO Review Sections
 
@@ -124,7 +156,7 @@ Additional frontmatter fields: `unresolved: {count}`, `critical_gaps: {count}`
 ## Files to Modify
 
 1. **`scripts/gen-skill-docs.ts`** — Add `{{REVIEW_REPORT_OUTPUT}}` placeholder resolution
-2. **`plan-ceo-review/SKILL.md.tmpl`** — Add report output step with CEO-specific sections
+2. **`plan-ceo-review/SKILL.md.tmpl`** — Add `Write` to allowed-tools; add report output step with CEO-specific sections
 3. **`plan-eng-review/SKILL.md.tmpl`** — Add report output step with eng-specific sections
 4. Regenerate `plan-ceo-review/SKILL.md` and `plan-eng-review/SKILL.md`
 
