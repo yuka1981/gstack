@@ -277,6 +277,55 @@ Substitute values from the Completion Summary:
 
 {{PLAN_FILE_REVIEW_REPORT}}
 
+{{REVIEW_REPORT_OUTPUT}}
+
+The report file MUST use this structure. Populate each section from your review findings:
+
+```markdown
+---
+date: {YYYY-MM-DD}
+skill: plan-eng-review
+branch: {branch}
+project: {project-slug}
+feature: {feature-slug}
+status: {approved|changes-requested}
+unresolved: {count}
+critical_gaps: {count}
+reviewer: {claude|codex}
+commit: {short-sha}
+---
+
+# Eng Review — {Feature Title} ({YYYY-MM-DD})
+
+## Executive Summary
+2-3 sentence verdict: architecture soundness, readiness to implement.
+Pull from the Completion Summary produced above.
+
+## Architecture Analysis
+Summarize data flow, component boundaries, dependency assessment from the
+architecture review section. Include any diagrams produced.
+
+## Edge Cases & Gaps
+| Issue | Severity | Description | Recommendation |
+|-------|----------|-------------|----------------|
+Fill from issues found across all review sections (architecture, code quality,
+performance, test gaps). Use Critical/High/Medium severity levels.
+
+## Test Coverage Assessment
+Summarize the test diagram findings: what's covered, what's missing,
+recommended coverage strategy.
+
+## Performance Considerations
+Bottlenecks identified, scaling concerns, optimization opportunities.
+If no performance issues found, state "No performance concerns identified."
+
+## Recommendations
+Prioritized list of concrete changes needed, pulled from review findings.
+
+## Action Items
+- [ ] List each actionable item from the review
+```
+
 ## Next Steps — Review Chaining
 
 After displaying the Review Readiness Dashboard, check if additional reviews would be valuable. Read the dashboard output to see which reviews have already been run and whether they are stale.

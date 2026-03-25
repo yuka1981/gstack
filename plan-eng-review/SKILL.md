@@ -1023,6 +1023,95 @@ plan's living status.
 - Always place it as the very last section in the plan file. If it was found mid-file,
   move it: delete the old location and append at the end.
 
+## Review Report Output
+
+After completing the Review Readiness Dashboard and Plan File Review Report above,
+write a structured markdown report file to persist the full review findings.
+
+### Determine the report file path
+
+1. **Feature slug**: Derive from the plan file being reviewed in this session
+   (e.g. \`2026-03-24-api-rate-limiting-design.md\` → \`api-rate-limiting\`).
+   If no plan file, sanitize the git branch name (strip \`feat/\`, \`fix/\`, etc. prefixes,
+   replace non-alphanumeric with hyphens). If branch is \`main\` or \`master\`, use \`unknown-feature\`.
+
+2. **Date**: Use today's date in YYYY-MM-DD format.
+
+3. **File path**: \`docs/reviews/{date}-plan-eng-review-{feature-slug}.md\`
+
+4. **Duplicate check**: If that file already exists, append \`-2\`, \`-3\`, etc.
+
+5. **Create directory**: \`mkdir -p docs/reviews\` before writing.
+
+### Determine status
+
+Map from the review log status you just persisted:
+- \`clean\` → \`approved\`
+- \`issues_open\` → \`changes-requested\`
+
+### Determine reviewer
+
+- If running in Claude Code: \`claude\`
+- If running via Codex: \`codex\`
+- If an outside voice was used during the review, add \`outside_voice: true\` to frontmatter
+
+### Write the report
+
+Use the Write tool to create the file. If the write fails:
+1. Try fallback path: \`~/.gstack/projects/$SLUG/reviews/{filename}.md\` (create dir with \`mkdir -p\`)
+2. If fallback also fails, warn the user and print the full report to terminal
+3. The review is NOT considered failed — this is non-blocking
+
+**PLAN MODE NOTE:** This write happens after review completion (post-completion step).
+If plan-mode restrictions block \`docs/reviews/\`, the fallback at \`~/.gstack/\` is always available.
+
+The report file MUST use this structure. Populate each section from your review findings:
+
+```markdown
+---
+date: {YYYY-MM-DD}
+skill: plan-eng-review
+branch: {branch}
+project: {project-slug}
+feature: {feature-slug}
+status: {approved|changes-requested}
+unresolved: {count}
+critical_gaps: {count}
+reviewer: {claude|codex}
+commit: {short-sha}
+---
+
+# Eng Review — {Feature Title} ({YYYY-MM-DD})
+
+## Executive Summary
+2-3 sentence verdict: architecture soundness, readiness to implement.
+Pull from the Completion Summary produced above.
+
+## Architecture Analysis
+Summarize data flow, component boundaries, dependency assessment from the
+architecture review section. Include any diagrams produced.
+
+## Edge Cases & Gaps
+| Issue | Severity | Description | Recommendation |
+|-------|----------|-------------|----------------|
+Fill from issues found across all review sections (architecture, code quality,
+performance, test gaps). Use Critical/High/Medium severity levels.
+
+## Test Coverage Assessment
+Summarize the test diagram findings: what's covered, what's missing,
+recommended coverage strategy.
+
+## Performance Considerations
+Bottlenecks identified, scaling concerns, optimization opportunities.
+If no performance issues found, state "No performance concerns identified."
+
+## Recommendations
+Prioritized list of concrete changes needed, pulled from review findings.
+
+## Action Items
+- [ ] List each actionable item from the review
+```
+
 ## Next Steps — Review Chaining
 
 After displaying the Review Readiness Dashboard, check if additional reviews would be valuable. Read the dashboard output to see which reviews have already been run and whether they are stale.

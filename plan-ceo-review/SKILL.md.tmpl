@@ -14,6 +14,7 @@ description: |
 benefits-from: [office-hours]
 allowed-tools:
   - Read
+  - Write
   - Grep
   - Glob
   - Bash
@@ -754,6 +755,49 @@ Before running this command, substitute the placeholder values from the Completi
 {{REVIEW_DASHBOARD}}
 
 {{PLAN_FILE_REVIEW_REPORT}}
+
+{{REVIEW_REPORT_OUTPUT}}
+
+The report file MUST use this structure. Populate each section from your review findings:
+
+```markdown
+---
+date: {YYYY-MM-DD}
+skill: plan-ceo-review
+branch: {branch}
+project: {project-slug}
+feature: {feature-slug}
+status: {approved|changes-requested}
+mode: {SCOPE_EXPANSION|SELECTIVE_EXPANSION|HOLD_SCOPE|SCOPE_REDUCTION}
+reviewer: {claude|codex}
+commit: {short-sha}
+---
+
+# CEO Review — {Feature Title} ({YYYY-MM-DD})
+
+## Executive Summary
+2-3 sentence verdict: what was reviewed, what mode was used, overall assessment.
+Pull from the Completion Summary produced above.
+
+## Scope Decisions
+| Proposal | Decision | Rationale |
+|----------|----------|-----------|
+Fill from Step 0D scope proposals. For HOLD_SCOPE/SCOPE_REDUCTION, write "No scope changes — mode was {mode}."
+
+## Vision & Strategy
+Summarize the 10-star vision, dream state delta, and product direction findings.
+For HOLD_SCOPE/SCOPE_REDUCTION, summarize the rigor/reduction rationale instead.
+
+## Risks & Concerns
+List premises challenged, assumptions questioned, blind spots identified.
+Include any CRITICAL GAPs from the failure modes analysis.
+
+## Recommendations
+Prioritized list of concrete next steps from the review.
+
+## Action Items
+- [ ] List each actionable item from the review
+```
 
 ## Next Steps — Review Chaining
 

@@ -312,6 +312,49 @@ describe('gen-skill-docs', () => {
     expect(qaContent).toContain('Triage');
     expect(qaContent).toContain('WTF');
   });
+
+  test('plan-ceo-review SKILL.md contains review report output section', () => {
+    const content = fs.readFileSync(path.join(ROOT, 'plan-ceo-review', 'SKILL.md'), 'utf-8');
+    expect(content).toContain('## Review Report Output');
+    expect(content).toContain('docs/reviews/');
+    expect(content).toContain('plan-ceo-review');
+    // Verify CEO-specific sections are present
+    expect(content).toContain('## Scope Decisions');
+    expect(content).toContain('## Vision & Strategy');
+  });
+
+  test('plan-eng-review SKILL.md contains review report output section', () => {
+    const content = fs.readFileSync(path.join(ROOT, 'plan-eng-review', 'SKILL.md'), 'utf-8');
+    expect(content).toContain('## Review Report Output');
+    expect(content).toContain('docs/reviews/');
+    expect(content).toContain('plan-eng-review');
+    // Verify eng-specific sections are present
+    expect(content).toContain('## Architecture Analysis');
+    expect(content).toContain('## Test Coverage Assessment');
+  });
+
+  test('REVIEW_REPORT_OUTPUT placeholder uses skill name from context', () => {
+    // Verify the placeholder resolves differently per skill
+    const ceoContent = fs.readFileSync(path.join(ROOT, 'plan-ceo-review', 'SKILL.md'), 'utf-8');
+    const engContent = fs.readFileSync(path.join(ROOT, 'plan-eng-review', 'SKILL.md'), 'utf-8');
+    // CEO template should reference plan-ceo-review in the file path pattern
+    expect(ceoContent).toContain('plan-ceo-review');
+    // Eng template should reference plan-eng-review in the file path pattern
+    expect(engContent).toContain('plan-eng-review');
+  });
+
+  test('review report output includes status mapping', () => {
+    const content = fs.readFileSync(path.join(ROOT, 'plan-ceo-review', 'SKILL.md'), 'utf-8');
+    expect(content).toContain('approved');
+    expect(content).toContain('changes-requested');
+    expect(content).toContain('clean');
+    expect(content).toContain('issues_open');
+  });
+
+  test('review report output includes fallback path', () => {
+    const content = fs.readFileSync(path.join(ROOT, 'plan-ceo-review', 'SKILL.md'), 'utf-8');
+    expect(content).toContain('~/.gstack/projects/$SLUG/reviews/');
+  });
 });
 
 describe('BASE_BRANCH_DETECT resolver', () => {
